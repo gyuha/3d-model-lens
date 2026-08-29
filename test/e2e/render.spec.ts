@@ -261,6 +261,97 @@ test.describe('측정', () => {
   });
 });
 
+test.describe('측정 마커 — 화면 고정 크기', () => {
+  /** 정점 스냅으로 측정 하나를 만든다. 기존 측정 테스트와 같은 경로다. */
+  async function makeMeasurement(page: Page): Promise<void> {
+    await sendHostMessage(page, { type: 'setMeasureMode', active: true });
+    const targets = await vertexTargets(page);
+    const pair = axisPair(targets, 'x', 10);
+    const box = await page.locator('#canvas').boundingBox();
+    expect(pair, '축에 평행한 정점 쌍을 찾지 못했다').toBeTruthy();
+    expect(box).not.toBeNull();
+    if (!pair || !box) {
+      return;
+    }
+    for (const target of pair) {
+      await page.mouse.click(box.x + target.screen.x, box.y + target.screen.y);
+      await page.waitForTimeout(80);
+    }
+  }
+
+  test('마커는 씬이 아니라 DOM 오버레이다 — 측정 하나에 두 개', async ({ page }) => {
+    await page.goto('/?fixture=cube.stl&unit=mm');
+    expect(await waitForViewer(page)).toBe('ready');
+    await makeMeasurement(page);
+
+    await expect(page.locator('.measure-marker')).toHaveCount(2);
+  });
+
+  /**
+   * 이 스위트의 핵심 단정이다. 마커가 씬 안의 구체였을 때는 원근을 그대로 받아 **줌하면
+   * 커지고 먼 점은 작아졌다**. 화면 공간으로 옮긴 뒤에는 카메라가 어디에 있든 같은 픽셀이다.
+   */
+  test('줌해도 마커 크기가 그대로다', async ({ page }) => {
+    await page.goto('/?fixture=cube.stl&unit=mm');
+    expect(await waitForViewer(page)).toBe('ready');
+    await makeMeasurement(page);
+
+    const sizeOf = async (): Promise<number> => {
+      const box = await page.locator('.measure-marker').first().boundingBox();
+      expect(box, '마커가 화면에 없다').not.toBeNull();
+      return box?.width ?? 0;
+    };
+
+    const before = await sizeOf();
+    expect(before, '마커가 보이지 않는다').toBeGreaterThan(0);
+
+    // 크게 당겨 본다 — 구체였다면 여기서 눈에 띄게 커졌다.
+    const canvas = (await page.locator('#canvas').boundingBox())!;
+    await page.mouse.move(canvas.x + canvas.width / 2, canvas.y + canvas.height / 2);
+    await page.mouse.wheel(0, -600);
+    await page.waitForTimeout(400);
+
+    expect(await sizeOf(), '줌인 뒤 크기가 바뀌었다').toBe(before);
+
+    await page.mouse.wheel(0, 1200);
+    await page.waitForTimeout(400);
+    expect(await sizeOf(), '줌아웃 뒤 크기가 바뀌었다').toBe(before);
+  });
+
+  test('두 마커는 깊이가 달라도 같은 크기다 — 원근을 받지 않는다', async ({ page }) => {
+    await page.goto('/?fixture=cube.stl&unit=mm');
+    expect(await waitForViewer(page)).toBe('ready');
+    await makeMeasurement(page);
+
+    // 비스듬히 돌려 두 점의 카메라 거리를 벌린다.
+    const canvas = (await page.locator('#canvas').boundingBox())!;
+    const cx = canvas.x + canvas.width / 2;
+    const cy = canvas.y + canvas.height / 2;
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    await page.mouse.move(cx + 120, cy + 60, { steps: 6 });
+    await page.mouse.up();
+    await page.waitForTimeout(400);
+
+    const boxes = await page.locator('.measure-marker').all();
+    expect(boxes).toHaveLength(2);
+    const widths = await Promise.all(boxes.map(async (m) => (await m.boundingBox())?.width ?? 0));
+    expect(widths[0]).toBe(widths[1]);
+  });
+
+  test('선택하면 마커도 함께 표시가 바뀐다 — 색이 재질이 아니라 CSS 로 옮겨졌다', async ({
+    page,
+  }) => {
+    await page.goto('/?fixture=cube.stl&unit=mm');
+    expect(await waitForViewer(page)).toBe('ready');
+    await makeMeasurement(page);
+
+    await expect(page.locator('.measure-marker.selected')).toHaveCount(0);
+    await page.locator('#measure-list .row button.pick').first().click();
+    await expect(page.locator('.measure-marker.selected')).toHaveCount(2);
+  });
+});
+
 test.describe('에러 처리', () => {
   test('깨진 파일은 빈 화면이 아니라 파일명과 원인을 표시한다', async ({ page }) => {
     await page.goto('/?fixture=broken.glb');

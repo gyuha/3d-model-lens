@@ -138,7 +138,6 @@ export async function createViewer(
     scene,
     canvas,
     labelHost,
-    extents,
     resolveUnit(config.pluginExtension, config.unitSetting),
     config.decimals,
   );

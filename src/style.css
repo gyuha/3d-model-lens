@@ -303,6 +303,31 @@
   }
 
   #labels { position: absolute; inset: 0; pointer-events: none; }
+
+  /*
+   * 측정 마커 — 화면 공간에 떠 있는 조준점.
+   *
+   * 씬 안의 구체였을 때는 원근을 그대로 받아 줌하면 커지고 먼 점은 작아졌다. 마커가 가리키는
+   * 것은 "무엇을 찍었는가" 하나뿐이므로 그 흔들림은 이득 없는 손해다. 여기로 옮기면서 크기는
+   * **px 로 못 박힌다** — 모델 크기에도 카메라 거리에도 매이지 않는다.
+   *
+   * 색은 `measurement.ts` 의 재질과 같은 값이다(주황 → 선택 시 하늘색). 두 곳에 적혀 있는
+   * 이유는 선이 아직 3D 라 재질을 쓰기 때문이고, 값이 갈리면 같은 측정의 선과 마커가 다른
+   * 색이 된다 — 바꿀 때는 반드시 함께 바꿀 것.
+   *
+   * 모서리 반경 0 규칙(ADR 260826-094348)의 예외다. 그 규칙은 각진 실루엣이 브랜드인 **패널
+   * chrome** 의 것이고, 이것은 씬 위의 조준점이며 구체였을 때부터 원이었다.
+   */
+  .measure-marker {
+    position: absolute; top: 0; left: 0;
+    width: 9px; height: 9px; box-sizing: border-box;
+    border-radius: 50%;
+    background: rgb(255, 140, 26);
+    /* 바탕색 테두리로 모델과 분리한다 — 주황 면 위에서도 마커가 사라지지 않는다. */
+    border: 1px solid var(--model-lens-backdrop, var(--ml-bg));
+    pointer-events: none;
+  }
+  .measure-marker.selected { background: rgb(64, 204, 255); }
   .measure-label {
     position: absolute; top: 0; left: 0; white-space: nowrap;
     padding: 0.0625rem 0.375rem;

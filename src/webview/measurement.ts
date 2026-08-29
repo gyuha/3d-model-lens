@@ -9,16 +9,13 @@ import { Matrix, Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 import { Viewport } from '@babylonjs/core/Maths/math.viewport.js';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
 import { CreateLines } from '@babylonjs/core/Meshes/Builders/linesBuilder.js';
-import { CreateSphere } from '@babylonjs/core/Meshes/Builders/sphereBuilder.js';
 import { PointerEventTypes } from '@babylonjs/core/Events/pointerEvents.js';
 import type { Camera } from '@babylonjs/core/Cameras/camera.js';
 import type { LinesMesh } from '@babylonjs/core/Meshes/linesMesh.js';
-import type { Mesh } from '@babylonjs/core/Meshes/mesh.js';
 import type { PickingInfo } from '@babylonjs/core/Collisions/pickingInfo.js';
 import type { Scene } from '@babylonjs/core/scene.js';
 import { distance, midpoint, snapToNearestVertex, type Point3, type Triangle } from '../measure.js';
 import { formatLength, type ResolvedUnit } from '../units.js';
-import { extentDiagonal, type Extents } from './geometry.js';
 
 /** 이 픽셀 수 이상 움직였으면 탭이 아니라 궤도 회전으로 본다. 손떨림·트랙패드를 감안한 값. */
 const TAP_THRESHOLD_PX = 6;
@@ -45,26 +42,33 @@ export interface Measurement {
  *   임계값을 넘는 이동은 탭으로 보지 않기 때문이다.
  * - **선·마커는 `renderingGroupId = 1`.** Babylon 이 렌더링 그룹 사이에 깊이 버퍼를 지우므로
  *   모델을 관통해서도 측정이 보인다.
- * - **마커 크기는 바운딩 박스 대각선에 비례.** 고정 크기는 작은 모델에서 안 보이고 큰 모델을
- *   삼킨다.
- * - **거리 라벨은 3D 가 아니라 HTML DOM 오버레이.** `@babylonjs/gui` 를 끌어들이지 않고
- *   (Inspector 를 lazy chunk 로 뺀 효과를 지킨다), VS Code 테마 변수를 그대로 쓴다.
+ * - **마커와 거리 라벨은 3D 가 아니라 HTML DOM 오버레이.** `@babylonjs/gui` 를 끌어들이지
+ *   않고(Inspector 를 lazy chunk 로 뺀 효과를 지킨다), 테마 변수를 그대로 쓴다.
+ *
+ *   마커는 한때 씬 안의 구체였고 크기를 바운딩 박스 대각선에 비례시켰다 — **월드 공간**에서
+ *   고정 크기를 쓰면 작은 모델에서 안 보이고 큰 모델을 삼키기 때문이다. 그러나 그 방식은
+ *   원근을 그대로 받아, 줌하면 커지고 먼 점은 작아진다. 측정 마커는 "무엇을 찍었는지"를
+ *   가리키는 조준점이므로 그 흔들림이 그대로 손해다. **화면 공간**으로 옮기면 모델 크기와
+ *   카메라 거리 양쪽에서 자유로워진다 — 원래 걱정하던 문제가 애초에 생기지 않는다.
+ *
+ *   대가는 선(`LinesMesh`)만 3D 에 남아 표현이 섞인다는 것이다. 선은 두 점을 잇는 것이라
+ *   **원근을 받는 편이 옳고**(깊이가 다른 두 점 사이가 기울어 보여야 한다), 마커는 그렇지
+ *   않다 — 그래서 이 혼합은 타협이 아니라 각자의 성격을 따른 결과다.
  */
 export class MeasurementTool {
   private readonly measurements: Measurement[] = [];
   private readonly visuals = new Map<
     number,
-    { line: LinesMesh; markers: Mesh[]; label: HTMLElement }
+    { line: LinesMesh; markers: MarkerOverlay[]; label: HTMLElement }
   >();
   private pending: Point3 | undefined;
   private pointerDownAt: { x: number; y: number } | undefined;
-  private pendingMarker: Mesh | undefined;
+  private pendingMarker: MarkerOverlay | undefined;
   private nextId = 1;
   private active = false;
   private snap = true;
   private selectedId: number | undefined;
 
-  private readonly markerDiameter: number;
   private readonly material: StandardMaterial;
   private readonly selectedMaterial: StandardMaterial;
 
@@ -74,12 +78,9 @@ export class MeasurementTool {
     private readonly scene: Scene,
     private readonly canvas: HTMLCanvasElement,
     private readonly labelHost: HTMLElement,
-    extents: Extents,
     private unit: ResolvedUnit,
     private decimals: number,
   ) {
-    this.markerDiameter = Math.max(extentDiagonal(extents) * 0.012, Number.MIN_VALUE);
-
     this.material = new StandardMaterial('modelLens.measure', scene);
     this.material.emissiveColor = new Color3(1, 0.55, 0.1);
     this.material.disableLighting = true;
@@ -108,7 +109,7 @@ export class MeasurementTool {
       }
       this.handleTap(info.pickInfo);
     }, PointerEventTypes.POINTERDOWN | PointerEventTypes.POINTERUP);
-    scene.onAfterRenderObservable.add(() => this.positionLabels());
+    scene.onAfterRenderObservable.add(() => this.positionOverlays());
   }
 
   public get list(): readonly Measurement[] {
@@ -182,7 +183,7 @@ export class MeasurementTool {
       const material = measurementId === id ? this.selectedMaterial : this.material;
       visual.line.color = material.emissiveColor;
       for (const marker of visual.markers) {
-        marker.material = material;
+        marker.element.classList.toggle('selected', measurementId === id);
       }
       visual.label.classList.toggle('selected', measurementId === id);
     }
@@ -282,22 +283,23 @@ export class MeasurementTool {
     this.visuals.set(measurement.id, { line, markers, label });
   }
 
-  private createMarker(point: Point3): Mesh {
-    const marker = CreateSphere(
-      'modelLens.measure.marker',
-      { diameter: this.markerDiameter, segments: 8 },
-      this.scene,
-    );
-    marker.position = toVector(point);
-    marker.material = this.material;
-    marker.isPickable = false;
-    marker.renderingGroupId = 1;
-    return marker;
+  /**
+   * 마커 하나. 위치는 매 프레임 `positionOverlays()` 가 투영해 넣는다.
+   *
+   * 형태는 원을 유지한다 — 패널 chrome 의 "모서리 반경은 전부 0" 규칙(ADR 260826-094348)은
+   * 각진 실루엣이 브랜드이기 때문인데, 이것은 chrome 이 아니라 **씬 위의 조준점**이고 씬 안의
+   * 구체였을 때부터 원이었다. 표현 방식을 바꾸면서 외형까지 바꿀 이유는 없다.
+   */
+  private createMarker(point: Point3): MarkerOverlay {
+    const element = document.createElement('span');
+    element.className = 'measure-marker';
+    this.labelHost.appendChild(element);
+    return { element, point };
   }
 
   private discardPending(): void {
     this.pending = undefined;
-    this.pendingMarker?.dispose();
+    this.pendingMarker?.element.remove();
     this.pendingMarker = undefined;
   }
 
@@ -308,7 +310,7 @@ export class MeasurementTool {
     }
     visual.line.dispose();
     for (const marker of visual.markers) {
-      marker.dispose();
+      marker.element.remove();
     }
     visual.label.remove();
     this.visuals.delete(id);
@@ -320,9 +322,12 @@ export class MeasurementTool {
    * 뷰포트를 **CSS 픽셀**로 잡는다 — `engine.getRenderWidth()` 는 devicePixelRatio 가 적용된
    * 버퍼 크기여서 고해상도 화면에서 라벨이 어긋난다.
    */
-  private positionLabels(): void {
+  private positionOverlays(): void {
     const camera: Camera | null = this.scene.activeCamera;
-    if (!camera || this.visuals.size === 0) {
+    if (!camera) {
+      return;
+    }
+    if (this.visuals.size === 0 && !this.pendingMarker) {
       return;
     }
     const rect = this.canvas.getBoundingClientRect();
@@ -332,25 +337,39 @@ export class MeasurementTool {
     const viewport = new Viewport(0, 0, rect.width, rect.height);
     const transform = this.scene.getTransformMatrix();
 
+    /** 월드 점 하나를 화면으로 옮긴다. 카메라 뒤라면 그 요소를 숨긴다. */
+    const place = (element: HTMLElement, point: Point3): void => {
+      const projected = Vector3.Project(toVector(point), Matrix.Identity(), transform, viewport);
+      // z 가 [0,1] 밖이면 카메라 뒤쪽이다.
+      const behind = projected.z < 0 || projected.z > 1;
+      element.style.display = behind ? 'none' : '';
+      if (!behind) {
+        element.style.transform = `translate(-50%, -50%) translate(${projected.x}px, ${projected.y}px)`;
+      }
+    };
+
     for (const measurement of this.measurements) {
       const visual = this.visuals.get(measurement.id);
       if (!visual) {
         continue;
       }
-      const projected = Vector3.Project(
-        toVector(midpoint(measurement.a, measurement.b)),
-        Matrix.Identity(),
-        transform,
-        viewport,
-      );
-      // z 가 [0,1] 밖이면 카메라 뒤쪽이다 — 라벨을 숨긴다.
-      const behind = projected.z < 0 || projected.z > 1;
-      visual.label.style.display = behind ? 'none' : '';
-      if (!behind) {
-        visual.label.style.transform = `translate(-50%, -50%) translate(${projected.x}px, ${projected.y}px)`;
+      place(visual.label, midpoint(measurement.a, measurement.b));
+      for (const marker of visual.markers) {
+        place(marker.element, marker.point);
       }
     }
+
+    // 첫 점만 찍힌 상태의 마커도 같은 경로로 따라온다.
+    if (this.pendingMarker) {
+      place(this.pendingMarker.element, this.pendingMarker.point);
+    }
   }
+}
+
+/** 화면에 떠 있는 마커 하나 — 그 요소와, 그것이 가리키는 월드 좌표. */
+interface MarkerOverlay {
+  element: HTMLElement;
+  point: Point3;
 }
 
 function toPoint(vector: Vector3): Point3 {
