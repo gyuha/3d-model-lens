@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>3D Model Lens</title>
+<link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+<div id="root" class="empty-window">
+  <!-- 창 전체가 파일을 받는 자리다. 아래 점선은 안내일 뿐 드롭 타깃이 아니다. -->
+  <div class="empty-inner">
+    <div class="empty-title">3D Model Lens</div>
+    <div class="empty-dropzone">
+      <div class="empty-hint">Drop a .gltf / .glb / .stl</div>
+      <div class="empty-or">or</div>
+      <button type="button" class="action" id="empty-open">Open…</button>
+    </div>
+  </div>
+</div>
+<script type="module" src="/src/empty.ts"></script>
+</body>
+</html>

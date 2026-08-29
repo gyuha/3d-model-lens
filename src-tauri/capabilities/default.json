@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "뷰어 창이 쓰는 최소 권한 — 이벤트 채널과 asset 프로토콜뿐이다.",
+  "windows": ["viewer-*"],
+  "permissions": [
+    "core:default",
+    "core:event:default"
+  ]
+}

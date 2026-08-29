@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>3D Model Lens</title>
+<link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+<div id="root">
+  <canvas id="canvas" tabindex="0"></canvas>
+
+  <!-- 내비게이션 큐브. 안의 SVG 는 navCube.ts 가 채운다. -->
+  <div id="nav-cube"></div>
+
+  <div id="panel" hidden>
+    <div class="m-stripe"></div>
+
+    <div class="panel-head">
+      <span class="caption">Dimensions</span>
+      <div id="dimensions">
+        <span class="axis caption">X</span><span class="value" id="dim-x">—</span>
+        <span class="axis caption">Y</span><span class="value" id="dim-y">—</span>
+        <span class="axis caption">Z</span><span class="value" id="dim-z">—</span>
+      </div>
+
+      <div id="unit-row">
+        <label for="unit">Unit</label>
+        <select id="unit">
+          <option value="auto">Auto</option>
+          <option value="mm">mm</option>
+          <option value="cm">cm</option>
+          <option value="m">m</option>
+          <option value="in">in</option>
+        </select>
+      </div>
+    </div>
+
+    <section class="panel-section" id="animation-section" hidden>
+      <button type="button" class="section-header" id="animation-header"
+              aria-expanded="true" aria-controls="animation-body">
+        <span>Animation</span><span class="chevron" aria-hidden="true">▾</span>
+      </button>
+      <div class="section-body" id="animation-body">
+        <div id="animation-row">
+          <button type="button" class="action" id="animation-toggle">Pause</button>
+          <select id="animation-select" aria-label="Animation"></select>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel-section" id="measure-section">
+      <button type="button" class="section-header" id="measure-header"
+              aria-expanded="false" aria-controls="measure-body">
+        <span>Measure</span><span class="chevron" aria-hidden="true">▸</span>
+      </button>
+      <div class="section-body" id="measure-body" hidden>
+        <label><input type="checkbox" id="toggle-measure" /> Enabled</label>
+        <label><input type="checkbox" id="toggle-snap" checked /> Vertex snap</label>
+        <div id="measure-actions">
+          <span class="state" id="measure-state"></span>
+          <button type="button" class="action" id="measure-clear">Clear all</button>
+        </div>
+        <div id="measure-list"></div>
+      </div>
+    </section>
+
+    <section class="panel-section" id="display-section">
+      <button type="button" class="section-header" id="display-header"
+              aria-expanded="false" aria-controls="display-body">
+        <span>Display</span><span class="chevron" aria-hidden="true">▸</span>
+      </button>
+      <div class="section-body" id="display-body" hidden>
+        <label><input type="checkbox" id="toggle-grid" checked /> Grid</label>
+        <div id="decimals-row">
+          <label for="decimals">Decimals</label>
+          <input type="number" id="decimals" min="0" max="10" step="1" />
+        </div>
+        <div id="background-row">
+          <label for="background-select">Background</label>
+          <select id="background-select">
+            <option value="theme">Theme</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel-section" id="shortcuts-section">
+      <button type="button" class="section-header" id="shortcuts-header"
+              aria-expanded="false" aria-controls="shortcuts-body">
+        <span>Shortcuts</span><span class="chevron" aria-hidden="true">▸</span>
+      </button>
+      <div class="section-body" id="shortcuts-body" hidden>
+        <!-- 목록은 cameraShortcuts.ts 의 표에서 만든다 — 여기에 적지 않는다. -->
+        <dl id="shortcut-list"></dl>
+      </div>
+    </section>
+
+    <section class="panel-section" id="debug-section">
+      <button type="button" class="section-header" id="debug-header"
+              aria-expanded="false" aria-controls="debug-body">
+        <span>Debug</span><span class="chevron" aria-hidden="true">▸</span>
+      </button>
+      <div class="section-body" id="debug-body" hidden>
+        <label><input type="checkbox" id="toggle-inspector" /> Inspector</label>
+        <label><input type="checkbox" id="toggle-inspector-start" /> Open on start</label>
+      </div>
+    </section>
+  </div>
+
+  <div id="labels"></div>
+
+  <div class="overlay" id="loading">
+    <div class="m-stripe"></div>
+    <div class="overlay-title">Loading model</div>
+    <div class="overlay-detail"></div>
+    <div class="overlay-detail" id="loading-progress"></div>
+  </div>
+
+  <div class="overlay" id="error" hidden>
+    <div class="rule"></div>
+    <div class="name"></div>
+    <div class="message"></div>
+  </div>
+</div>
+<script type="module" src="/src/webview/main.ts"></script>
+</body>
+</html>

@@ -1,0 +1,30 @@
+solid fixture_chiral
+  facet normal 0.000000e+0 0.000000e+0 -1.000000e+0
+    outer loop
+      vertex 0.000000e+0 0.000000e+0 0.000000e+0
+      vertex 0.000000e+0 2.000000e+0 0.000000e+0
+      vertex 3.000000e+0 0.000000e+0 0.000000e+0
+    endloop
+  endfacet
+  facet normal 0.000000e+0 -1.000000e+0 0.000000e+0
+    outer loop
+      vertex 0.000000e+0 0.000000e+0 0.000000e+0
+      vertex 3.000000e+0 0.000000e+0 0.000000e+0
+      vertex 0.000000e+0 0.000000e+0 1.000000e+0
+    endloop
+  endfacet
+  facet normal -1.000000e+0 0.000000e+0 0.000000e+0
+    outer loop
+      vertex 0.000000e+0 0.000000e+0 0.000000e+0
+      vertex 0.000000e+0 0.000000e+0 1.000000e+0
+      vertex 0.000000e+0 2.000000e+0 0.000000e+0
+    endloop
+  endfacet
+  facet normal 2.857143e-1 4.285714e-1 8.571429e-1
+    outer loop
+      vertex 3.000000e+0 0.000000e+0 0.000000e+0
+      vertex 0.000000e+0 2.000000e+0 0.000000e+0
+      vertex 0.000000e+0 0.000000e+0 1.000000e+0
+    endloop
+  endfacet
+endsolid fixture_chiral

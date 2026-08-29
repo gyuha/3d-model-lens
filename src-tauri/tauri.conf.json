@@ -1,0 +1,49 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "3D Model Lens",
+  "version": "0.1.0",
+  "identifier": "com.gyuha.model-lens",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://127.0.0.1:39177",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": "default-src 'none'; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost asset: http://asset.localhost; img-src 'self' asset: http://asset.localhost blob: data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; worker-src blob:",
+      "assetProtocol": {
+        "enable": true,
+        "scope": []
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "app",
+      "dmg"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns"
+    ],
+    "copyright": "MIT",
+    "category": "Graphics and Design",
+    "fileAssociations": [
+      {
+        "ext": [
+          "gltf",
+          "glb",
+          "stl"
+        ],
+        "name": "3D Model",
+        "description": "glTF / GLB / STL 3D 모델",
+        "role": "Viewer"
+      }
+    ]
+  }
+}
