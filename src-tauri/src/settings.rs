@@ -34,6 +34,12 @@ pub struct Settings {
     pub unit_memory: VecDeque<(String, String)>,
     /// 최근 연 파일. 최신이 앞이다.
     pub recent_files: VecDeque<String>,
+    /// 표시 보조 — 3축 조명. 형태를 읽기 위한 것이며 기본은 꺼짐이다.
+    pub axis_lighting: bool,
+    /// 표시 보조 — 크리스 모서리.
+    pub edges: bool,
+    /// 표시 보조 — 법선 컬러링.
+    pub normal_colors: bool,
 }
 
 impl Default for Settings {
@@ -46,6 +52,11 @@ impl Default for Settings {
             decimals: 3,
             unit_memory: VecDeque::new(),
             recent_files: VecDeque::new(),
+            // 표시 보조는 셋 다 기본 꺼짐이다 — 아무것도 건드리지 않은 첫 화면은 그대로다
+            // (ADR 260830-123628 이 그 대가를 함께 적어 뒀다).
+            axis_lighting: false,
+            edges: false,
+            normal_colors: false,
         }
     }
 }
@@ -110,6 +121,17 @@ impl Settings {
 
     pub fn forget_recent(&mut self, path: &str) {
         self.recent_files.retain(|p| p != path);
+    }
+
+    /// 표시 보조 하나를 켜고 끈다. 키는 프론트의 `SHADING_AID_KEYS` 와 같은 이름이다 —
+    /// 어긋나면 패널에서 켠 것이 저장되지 않는다.
+    pub fn set_shading_aid(&mut self, aid: &str, on: bool) {
+        match aid {
+            "axisLighting" => self.axis_lighting = on,
+            "edges" => self.edges = on,
+            "normalColors" => self.normal_colors = on,
+            _ => {}
+        }
     }
 }
 

@@ -14,6 +14,7 @@ import { createNavCube } from './navCube.js';
 import { poseForNormal } from './navCubePose.js';
 import { createViewer, type Viewer } from './viewer.js';
 import { readBootConfig } from '../bootConfig.js';
+import type { ShadingAidKey } from '../shading.js';
 import { initializeHostBridge, post } from '../host.js';
 
 const root = requireElement<HTMLDivElement>('root');
@@ -99,6 +100,7 @@ async function boot(): Promise<void> {
     wireMeasurePanel(viewer.measure, viewer);
     wireAnimationPanel(viewer);
     wireBackgroundPanel();
+    wireShadingAids(viewer);
 
     root.dataset.state = 'ready';
     root.dataset.meshCount = String(viewer.meshes.length);
@@ -445,6 +447,82 @@ function wireMeasurePanel(measure: MeasurementTool, viewer: Viewer): void {
  * `applyBackground` 는 멱등이고 프로그래매틱한 `value` 대입은 `change` 를 다시 쏘지 않으므로
  * 루프가 생기지 않는다.
  */
+/** 표시 보조 셋. 배선이 동일하므로 표로 두고 순회한다. */
+const SHADING_TOGGLES: {
+  id: string;
+  aid: ShadingAidKey;
+  apply: (viewer: Viewer, on: boolean) => void;
+}[] = [
+  { id: 'toggle-axis-lighting', aid: 'axisLighting', apply: (v, on) => v.shading.setLighting(on) },
+  { id: 'toggle-edges', aid: 'edges', apply: (v, on) => v.shading.setEdges(on) },
+  {
+    id: 'toggle-normal-colors',
+    aid: 'normalColors',
+    apply: (v, on) => v.shading.setNormalColors(on),
+  },
+];
+
+function wireShadingAids(viewer: Viewer): void {
+  // 부트 설정이 진실의 출처다 — 설정이 켜진 채로 연 창은 처음부터 그 상태여야 한다.
+  for (const toggle of SHADING_TOGGLES) {
+    setChecked(toggle.id, config.shadingAids[toggle.aid]);
+  }
+
+  if (!viewer.shading.lightingSupported) {
+    // 금속 재질에는 조명 보조의 전제가 성립하지 않는다 — 켜도 더 어둡기만 하다.
+    const lighting = requireElement<HTMLInputElement>('toggle-axis-lighting');
+    lighting.checked = false;
+    lighting.disabled = true;
+    lighting.title =
+      'Axis lighting only helps models that use the viewer\u2019s own material, such as STL.';
+  }
+  if (!viewer.shading.edgesSupported) {
+    // 삼각형이 너무 많아 모서리 생성이 화면을 오래 붙잡는 모델이다. 눌러도 아무 일이 없는 것보다
+    // 잠그고 이유를 말하는 편이 낫다.
+    const edges = requireElement<HTMLInputElement>('toggle-edges');
+    edges.checked = false;
+    edges.disabled = true;
+    edges.title = 'This model has too many triangles for edge detection to stay responsive.';
+  }
+  for (const toggle of SHADING_TOGGLES) {
+    // 초기 apply 가 여기 있어야 설정이 켜진 채로 연 뷰어가 실제로 켜진 상태로 시작한다.
+    bindCheckbox(toggle.id, (on) => {
+      toggle.apply(viewer, on);
+      syncLightingAvailability(viewer);
+    });
+    // 호스트 통보는 `bindCheckbox` 의 초기 apply 에 섞지 않는다 — 그리드와 같은 함정이다.
+    // 섞으면 뷰어를 열 때마다 `shadingAidChanged` 가 나가 전역 설정을 다시 쓴다.
+    requireElement<HTMLInputElement>(toggle.id).addEventListener('change', (event) => {
+      post({
+        type: 'shadingAidChanged',
+        aid: toggle.aid,
+        on: (event.target as HTMLInputElement).checked,
+      });
+    });
+  }
+}
+
+/**
+ * 법선 컬러링은 **조명을 쓰지 않는다** — 면 방향을 색으로 직접 칠하므로, 켜져 있는 동안 조명
+ * 토글은 화면에 아무 영향이 없다. 그 사실을 UI 로 드러낸다.
+ *
+ * **체크 상태는 건드리지 않고 비활성화만 한다.** 체크를 풀어 버리면 법선 컬러링을 껐을 때
+ * 조명이 돌아오지 않아, 사용자가 켜 뒀던 선택을 우리가 조용히 지운 셈이 된다.
+ */
+function syncLightingAvailability(viewer: Viewer): void {
+  const normalColors = requireElement<HTMLInputElement>('toggle-normal-colors');
+  const lighting = requireElement<HTMLInputElement>('toggle-axis-lighting');
+  // 이 모델이 애초에 조명 보조를 지원하지 않으면 계속 잠긴 채로 둔다 — 법선 컬러링을 껐다고
+  // 풀어 주면 눌러도 아무 일이 없는 체크박스가 된다.
+  if (!viewer.shading.lightingSupported) {
+    return;
+  }
+  lighting.disabled = normalColors.checked;
+  lighting.title = normalColors.checked
+    ? 'Normal colors paints faces directly and ignores lighting. Turn it off to use this.'
+    : '';
+}
+
 function wireBackgroundPanel(): void {
   const select = requireElement<HTMLSelectElement>('background-select');
   // 원본 확장에서는 호스트가 HTML 을 조립하며 `selected` 를 박았다. HTML 이 정적이 된 지금은
@@ -515,6 +593,17 @@ function wireHostMessages(viewer: Viewer, rerenderUnits: () => void): void {
       const shortcut = shortcutForTarget(message.target);
       if (shortcut) {
         moveCameraTo(viewer, shortcut);
+      }
+      return;
+    }
+    if (message?.type === 'setShadingAid') {
+      const toggle = SHADING_TOGGLES.find((candidate) => candidate.aid === message.aid);
+      if (toggle) {
+        toggle.apply(viewer, message.on);
+        setChecked(toggle.id, message.on);
+        syncLightingAvailability(viewer);
+        // 그리드와 같은 이유로 다시 그린다 — 씬을 바꾸므로 유휴였다면 화면이 얼어붙는다.
+        viewer.markDirty();
       }
       return;
     }

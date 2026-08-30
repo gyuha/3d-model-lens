@@ -22,6 +22,7 @@ import { computeExtents, type Extents } from './geometry.js';
 import { OrbitCamera } from './orbitCamera.js';
 import { applyHandednessFix } from './handedness.js';
 import { MeasurementTool } from './measurement.js';
+import { ShadingAids } from './shading.js';
 import { RenderGate } from './renderGate.js';
 import { registerModelLensLoaders } from './loaders.js';
 import { setInspectorVisible } from './inspector.js';
@@ -42,6 +43,8 @@ export interface ViewerConfig {
 export interface Viewer {
   scene: Scene;
   chrome: Chrome;
+  /** 표시 보조 — 형태를 읽기 쉽게 만드는 토글 셋. 기본은 전부 꺼짐이다. */
+  shading: ShadingAids;
   measure: MeasurementTool;
   animations: AnimationController;
   /**
@@ -134,6 +137,17 @@ export async function createViewer(
   const extents = computeExtents(scene, meshes);
   const { orbit, input } = createCamera(scene, canvas, extents, restoredCamera);
   const chrome = new Chrome(scene, extents, meshes);
+  // 보조 광원을 **이름이 아니라 참조로** 넘긴다 — 이름으로 찾게 하면 여기서 이름을 바꾸는 순간
+  // 3축 조명이 조용히 2축으로 퇴화하고 아무 테스트도 실패하지 않는다(원본 run.md 의 발산 1).
+  const shading = new ShadingAids(scene, meshes, {
+    fill,
+    markDirty: () => gate.markDirty(),
+    // STL 은 로더가 재질을 만들지 않아 우리 폴백(`metallic: 0`)을 받는다. glTF 는 자체 재질을
+    // 들고 오고 기본값이 `metallic: 1` 이라 확산광이 없어 조명 보조가 무의미하다 — 자세한
+    // 근거는 `ShadingAids.lightingSupported` 주석.
+    lightingSupported: config.pluginExtension === '.stl',
+  });
+
   const measure = new MeasurementTool(
     scene,
     canvas,
@@ -242,6 +256,7 @@ export async function createViewer(
     }),
     extents,
     meshes,
+    shading,
     resetView: () => {
       orbit.frame(extents);
       gate.markDirty();
@@ -266,6 +281,7 @@ export async function createViewer(
     projectToScreen: (point) => projectToScreen(scene, canvas, point),
     setInspector: (visible) => setInspectorVisible(scene, visible),
     dispose: () => {
+      shading.dispose();
       input.dispose();
       window.removeEventListener('resize', onResize);
       scene.dispose();

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { colorDistance, decodePng } from './png';
 import {
   axisPair,
   angleBetween,
@@ -349,6 +350,259 @@ test.describe('측정 마커 — 화면 고정 크기', () => {
     await expect(page.locator('.measure-marker.selected')).toHaveCount(0);
     await page.locator('#measure-list .row button.pick').first().click();
     await expect(page.locator('.measure-marker.selected')).toHaveCount(2);
+  });
+});
+
+test.describe('표시 보조', () => {
+  /**
+   * 색을 묶기 전에 양자화한다.
+   *
+   * 법선 컬러링은 면 법선을 **화면 도함수**로 구하므로 같은 평면 안에서도 값이 1 정도 흔들린다
+   * (`255,128,128` 과 `255,127,128`). 정확히 같은 색으로 묶으면 한 면이 여러 덩어리로 쪼개져,
+   * "가장 큰 덩어리 3개"가 전부 같은 면이 되어 버린다.
+   */
+  const key = (color: [number, number, number]): string =>
+    color.map((v) => Math.round(v / 16) * 16).join(',');
+  // **면을 눈이 아니라 색으로 식별한다.** 법선 컬러링은 면 방향을 그대로 칠하므로, 색이 다르면
+  // 방향이 다른 면이다. 이 절차 없이 화면 좌표를 손으로 찍으면 안티에일리어싱된 경계 픽셀을
+  // 면으로 착각하고 측정이 통째로 무의미해진다 — 이 저장소에서 실제로 한 번 그렇게 속았다.
+  async function faceSamples(page: Page): Promise<{ x: number; y: number }[]> {
+    const points = await modelPoints(page);
+    await sendHostMessage(page, { type: 'setShadingAid', aid: 'normalColors', on: true });
+    await page.waitForTimeout(400);
+    expect(await waitForIdle(page)).toBe(true);
+
+    const png = decodePng(await page.screenshot(), page.viewportSize()?.width ?? 1280);
+    const groups = new Map<string, { x: number; y: number; n: number }>();
+    for (const point of points) {
+      const group = key(png.at(point.x, point.y));
+      const hit = groups.get(group);
+      if (hit) {
+        hit.n += 1;
+      } else {
+        groups.set(group, { ...point, n: 1 });
+      }
+    }
+    await sendHostMessage(page, { type: 'setShadingAid', aid: 'normalColors', on: false });
+    await page.waitForTimeout(400);
+
+    // 면적이 큰 덩어리만 면으로 인정한다.
+    return [...groups.values()]
+      .sort((a, b) => b.n - a.n)
+      .slice(0, 3)
+      .map(({ x, y }) => ({ x, y }));
+  }
+
+  /** 패널에 가려지지 않은, 모델 위의 화면 좌표. 픽으로 확인하므로 배경을 잘못 세지 않는다. */
+  async function modelPoints(page: Page): Promise<{ x: number; y: number }[]> {
+    const canvas = await page.locator('#canvas').boundingBox();
+    const panel = await page.locator('#panel').boundingBox();
+    expect(canvas).not.toBeNull();
+    if (!canvas) {
+      return [];
+    }
+    const local = await page.evaluate(
+      ({ w, h }) => {
+        const seam = (window as unknown as { __modelLens: { probeAt: (x: number, y: number) => unknown } })
+          .__modelLens;
+        const hits: { x: number; y: number }[] = [];
+        for (let y = 6; y < h; y += 6) {
+          for (let x = 6; x < w; x += 6) {
+            if (seam.probeAt(x, y)) {
+              hits.push({ x, y });
+            }
+          }
+        }
+        return hits;
+      },
+      { w: canvas.width, h: canvas.height },
+    );
+    return local
+      .map((point) => ({ x: canvas.x + point.x, y: canvas.y + point.y }))
+      // 패널은 캔버스 **위에** 떠 있다 — 픽은 뒤의 모델을 맞히지만 스크린샷에는 패널이 찍힌다.
+      .filter(
+        (point) =>
+          !panel ||
+          point.x < panel.x ||
+          point.x > panel.x + panel.width ||
+          point.y < panel.y ||
+          point.y > panel.y + panel.height,
+      );
+  }
+
+  async function minFaceDistance(page: Page, faces: { x: number; y: number }[]): Promise<number> {
+    const png = decodePng(await page.screenshot(), page.viewportSize()?.width ?? 1280);
+    const colors = faces.map((f) => png.at(f.x, f.y));
+    let min = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < colors.length; i += 1) {
+      for (let j = i + 1; j < colors.length; j += 1) {
+        min = Math.min(min, colorDistance(colors[i], colors[j]));
+      }
+    }
+    return min;
+  }
+
+  test('조명 보조를 켜면 방향이 다른 면들이 훨씬 잘 갈린다 — 그리고 끄면 정확히 돌아온다', async ({
+    page,
+  }) => {
+    await page.goto('/?fixture=cube.stl&unit=mm');
+    expect(await waitForViewer(page)).toBe('ready');
+    const faces = await faceSamples(page);
+    expect(faces.length, '면을 셋 찾지 못했다').toBe(3);
+
+    const off = await minFaceDistance(page, faces);
+    await sendHostMessage(page, { type: 'setShadingAid', aid: 'axisLighting', on: true });
+    await expect(page.locator('#toggle-axis-lighting')).toBeChecked();
+    await page.waitForTimeout(400);
+    const on = await minFaceDistance(page, faces);
+
+    // 실측 기준(v0.6.0): 꺼짐 9 → 켜짐 26. **절대값이 아니라 배수로 단정한다** — 조명 값을
+    // 다듬어도 유효하되, 개선이 사라지거나 뒤집히면 반드시 실패하도록.
+    expect(on, `켰는데 면 구분이 나아지지 않았다 (꺼짐 ${off} → 켜짐 ${on})`).toBeGreaterThan(off * 2);
+
+    await sendHostMessage(page, { type: 'setShadingAid', aid: 'axisLighting', on: false });
+    await page.waitForTimeout(400);
+    expect(await minFaceDistance(page, faces), '껐는데 원래 화면으로 돌아오지 않았다').toBe(off);
+  });
+
+  test('법선 컬러링은 세 축 면을 각각 다른 색으로 칠한다', async ({ page }) => {
+    await page.goto('/?fixture=cube.stl&unit=mm');
+    expect(await waitForViewer(page)).toBe('ready');
+    const points = await modelPoints(page);
+
+    await sendHostMessage(page, { type: 'setShadingAid', aid: 'normalColors', on: true });
+    await page.waitForTimeout(400);
+    const png = decodePng(await page.screenshot(), page.viewportSize()?.width ?? 1280);
+    const counts = new Map<string, number>();
+    for (const point of points) {
+      const group = key(png.at(point.x, point.y));
+      counts.set(group, (counts.get(group) ?? 0) + 1);
+    }
+    const biggest = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
+    expect(biggest.length, '면이 셋 나오지 않았다').toBe(3);
+
+    // 상자의 보이는 세 면은 서로 직각이므로 색이 **확실히** 달라야 한다. 미세한 차이는
+    // 조명 얼룩일 수 있으므로 넉넉한 문턱을 둔다.
+    for (let i = 0; i < 3; i += 1) {
+      for (let j = i + 1; j < 3; j += 1) {
+        const a = biggest[i][0].split(',').map(Number) as [number, number, number];
+        const b = biggest[j][0].split(',').map(Number) as [number, number, number];
+        expect(colorDistance(a, b), `두 면 색이 너무 비슷하다: ${a} vs ${b}`).toBeGreaterThan(60);
+      }
+    }
+  });
+
+  test('모서리 보조는 모델 위에 끊김 없는 어두운 선을 그린다', async ({ page }) => {
+    await page.goto('/?fixture=cube.stl&unit=mm');
+    expect(await waitForViewer(page)).toBe('ready');
+    const points = await modelPoints(page);
+    expect(points.length, '모델을 찾지 못했다').toBeGreaterThan(20);
+
+    // 모델이 차지한 화면 범위 안의 **모든 픽셀**을 본다. 성긴 격자로 세면 1px 선을 맞히는 것이
+    // 운에 달리고, 실제로 선이 그려지는데도 "8 → 8" 로 통과해 버렸다.
+    const box = {
+      x0: Math.min(...points.map((p) => p.x)),
+      x1: Math.max(...points.map((p) => p.x)),
+      y0: Math.min(...points.map((p) => p.y)),
+      y1: Math.max(...points.map((p) => p.y)),
+    };
+    const shot = async (): Promise<ReturnType<typeof decodePng>> =>
+      decodePng(await page.screenshot(), page.viewportSize()?.width ?? 1280);
+
+    const before = await shot();
+    await sendHostMessage(page, { type: 'setShadingAid', aid: 'edges', on: true });
+    await expect(page.locator('#toggle-edges')).toBeChecked();
+    await page.waitForTimeout(400);
+    const after = await shot();
+
+    let darkened = 0;
+    for (let y = box.y0; y <= box.y1; y += 1) {
+      for (let x = box.x0; x <= box.x1; x += 1) {
+        const a = before.at(x, y);
+        const b = after.at(x, y);
+        if (a[0] + a[1] + a[2] - (b[0] + b[1] + b[2]) > 60) {
+          darkened += 1;
+        }
+      }
+    }
+
+    // 실측 기준(v0.6.0): 깊이 바이어스 없이는 140, 있으면 3265. 선이 표면과 깊이 싸움에서 지면
+    // 점선으로 끊겨 이 값이 급감하므로, 그 회귀를 여기서 잡는다.
+    expect(darkened, `모서리 선이 없거나 점선으로 끊겼다 (어두워진 픽셀 ${darkened})`).toBeGreaterThan(
+      800,
+    );
+  });
+
+  test('법선 컬러링이 켜져 있으면 조명 토글을 잠그되 체크는 남긴다', async ({ page }) => {
+    await page.goto('/?fixture=cube.stl&unit=mm');
+    expect(await waitForViewer(page)).toBe('ready');
+    const lighting = page.locator('#toggle-axis-lighting');
+
+    await sendHostMessage(page, { type: 'setShadingAid', aid: 'axisLighting', on: true });
+    await expect(lighting).toBeChecked();
+    await expect(lighting).toBeEnabled();
+
+    // 법선 컬러링은 조명을 쓰지 않으므로 조명 토글은 화면에 아무 영향이 없다 — 그 사실을 잠금으로
+    // 드러내되, **체크는 지우지 않는다.** 지우면 껐을 때 사용자의 선택이 조용히 사라진다.
+    await sendHostMessage(page, { type: 'setShadingAid', aid: 'normalColors', on: true });
+    await expect(lighting).toBeDisabled();
+    await expect(lighting, '잠그면서 체크까지 지웠다 — 사용자의 선택이 사라진다').toBeChecked();
+
+    await sendHostMessage(page, { type: 'setShadingAid', aid: 'normalColors', on: false });
+    await expect(lighting).toBeEnabled();
+    await expect(lighting).toBeChecked();
+  });
+
+  test('법선 컬러링은 법선 속성이 없는 glTF 에서도 색을 낸다 — 검은 화면 회귀', async ({ page }) => {
+    // glTF 는 법선 생략을 허용하고(사양상 렌더러가 평면 법선을 계산해야 한다) 이 저장소의
+    // 픽스처가 실제로 `속성=[position]` 뿐이다. 셰이더가 법선 **속성**을 읽던 동안에는
+    // `normalize(0,0,0)` 이 NaN 이 되어 모델이 통째로 검게 나왔다.
+    await page.goto('/?fixture=cube.glb');
+    expect(await waitForViewer(page)).toBe('ready');
+    const points = await modelPoints(page);
+    expect(points.length, '모델을 찾지 못했다').toBeGreaterThan(20);
+
+    await sendHostMessage(page, { type: 'setShadingAid', aid: 'normalColors', on: true });
+    await page.waitForTimeout(400);
+    const png = decodePng(await page.screenshot(), page.viewportSize()?.width ?? 1280);
+    const counts = new Map<string, number>();
+    for (const point of points) {
+      const group = key(png.at(point.x, point.y));
+      counts.set(group, (counts.get(group) ?? 0) + 1);
+    }
+    const biggest = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
+
+    for (const [key] of biggest) {
+      const [r, g, b] = key.split(',').map(Number);
+      expect(r + g + b, `면이 검게 칠해졌다 (${key}) — 법선 속성이 없는 메시다`).toBeGreaterThan(90);
+    }
+    for (let i = 0; i < 3; i += 1) {
+      for (let j = i + 1; j < 3; j += 1) {
+        const a = biggest[i][0].split(',').map(Number) as [number, number, number];
+        const b = biggest[j][0].split(',').map(Number) as [number, number, number];
+        expect(colorDistance(a, b), `두 면 색이 너무 비슷하다: ${a} vs ${b}`).toBeGreaterThan(60);
+      }
+    }
+  });
+
+  test('조명 보조는 glTF 에서 잠겨 있다 — 금속 재질에는 전제가 성립하지 않는다', async ({ page }) => {
+    await page.goto('/?fixture=cube.glb');
+    expect(await waitForViewer(page)).toBe('ready');
+
+    // 켜도 더 어둡기만 하므로 아예 열어 주지 않는다. 모서리는 위치에서 면 법선을 구하므로
+    // 영향이 없고, 전 포맷에서 그대로 쓸 수 있다.
+    await expect(page.locator('#toggle-axis-lighting')).toBeDisabled();
+    await expect(page.locator('#toggle-edges')).toBeEnabled();
+    await expect(page.locator('#toggle-normal-colors')).toBeEnabled();
+  });
+
+  test('설정이 켜진 채로 연 뷰어는 처음부터 켜져 있다', async ({ page }) => {
+    await page.goto('/?fixture=cube.stl&unit=mm&edges=true&axisLighting=true');
+    expect(await waitForViewer(page)).toBe('ready');
+
+    await expect(page.locator('#toggle-edges')).toBeChecked();
+    await expect(page.locator('#toggle-axis-lighting')).toBeChecked();
+    await expect(page.locator('#toggle-normal-colors')).not.toBeChecked();
   });
 });
 

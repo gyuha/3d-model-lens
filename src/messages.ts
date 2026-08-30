@@ -1,4 +1,5 @@
 import type { BackgroundMode } from './background';
+import type { ShadingAidKey } from './shading';
 import type { UnitSetting } from './units';
 
 /** 확장 호스트 ↔ 웹뷰 메시지. 양쪽이 같은 정의를 쓴다. */
@@ -14,6 +15,8 @@ export type HostToWebview =
   | { type: 'setGrid'; grid: boolean }
   /** 소수 자릿수가 바뀌었다 — 열려 있는 모든 뷰어에 전파된다. */
   | { type: 'setDecimals'; decimals: number }
+  /** 표시 보조 설정이 바뀌었다 — 열려 있는 모든 뷰어에 전파된다. */
+  | { type: 'setShadingAid'; aid: ShadingAidKey; on: boolean }
   /**
    * 카메라를 정해진 목적지로 옮긴다 — 숫자키와 같은 이동을 메뉴에서도 할 수 있게 한다.
    * 자세(쿼터니언)가 아니라 **목적지 이름**을 보낸다: 법선을 메시지에 실으면 호스트와 뷰어가
@@ -39,4 +42,6 @@ export type WebviewToHost =
   /** 사용자가 "시작 시 Inspector" 를 토글했다 — 다음에 여는 창부터 적용된다. */
   | { type: 'inspectorOnStartChanged'; value: boolean }
   /** 빈 창에서 파일 열기를 요청했다 — 호스트가 대화상자를 띄운다. */
-  | { type: 'openRequested' };
+  | { type: 'openRequested' }
+  /** 사용자가 뷰어 패널에서 표시 보조를 토글했다 — 호스트가 전역 설정에 저장한다. */
+  | { type: 'shadingAidChanged'; aid: ShadingAidKey; on: boolean };

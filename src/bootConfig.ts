@@ -2,6 +2,7 @@ import { isBackgroundMode, type BackgroundMode } from './background.js';
 import { extensionOf, pluginExtensionFor, type SupportedExtension } from './formats.js';
 import { readGridSetting } from './grid.js';
 import { toAssetUrl } from './host.js';
+import { readShadingAids, type ShadingAidState } from './shading.js';
 import { isUnitSetting, type UnitSetting } from './units.js';
 
 /**
@@ -20,6 +21,8 @@ export interface BootConfig {
   grid: boolean;
   /** 모델을 열 때 Inspector 를 함께 열지 — 다음에 여는 창부터 적용되는 전역 설정. */
   inspectorOnStart: boolean;
+  /** 표시 보조 셋의 초기 상태. 전부 기본 꺼짐이다. */
+  shadingAids: ShadingAidState;
 }
 
 /**
@@ -66,6 +69,12 @@ export function readBootConfig(): BootConfig {
     unitSetting: params.get('unit') ?? undefined,
     decimals: params.get('decimals') === null ? undefined : Number(params.get('decimals')),
     grid: params.get('grid') === null ? undefined : params.get('grid') !== 'false',
+    // 표시 보조도 쿼리로 켤 수 있다 — "설정이 켜진 채로 연 창"을 e2e 가 재현하는 유일한 길이다.
+    shadingAids: {
+      axisLighting: params.get('axisLighting') === 'true',
+      edges: params.get('edges') === 'true',
+      normalColors: params.get('normalColors') === 'true',
+    },
   } as Partial<BootConfig>);
 }
 
@@ -88,6 +97,10 @@ function normalize(raw: Partial<BootConfig>): BootConfig {
     decimals: clampDecimals(raw.decimals),
     grid: readGridSetting(raw.grid),
     inspectorOnStart: raw.inspectorOnStart === true,
+    // 손으로 고친 설정에서 와도 불리언이 아니면 꺼짐으로 떨어뜨린다 (`readShadingAids`).
+    shadingAids: readShadingAids(
+      (key) => (raw.shadingAids as Record<string, unknown> | undefined)?.[key],
+    ),
   };
 }
 

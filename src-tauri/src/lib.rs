@@ -59,6 +59,7 @@ enum WebviewToHost {
     PanelState { visible: bool },
     UnitChanged { unit: String },
     OpenRequested,
+    ShadingAidChanged { aid: String, on: bool },
     BackgroundChanged { background: String },
     GridChanged { grid: bool },
     DecimalsChanged { decimals: u8 },
@@ -76,6 +77,7 @@ enum HostToWebview {
     SetGrid { grid: bool },
     SetDecimals { decimals: u8 },
     SetCameraPose { target: String },
+    SetShadingAid { aid: String, on: bool },
 }
 
 /// 카메라 목적지 — 숫자키와 같은 목록이다. 프론트의 `cameraShortcuts.ts` 표와 **순서·이름이
@@ -341,6 +343,11 @@ fn boot_script(app: &AppHandle, model: Option<&Path>) -> String {
         "decimals": settings.decimals,
         "grid": settings.grid,
         "inspectorOnStart": settings.inspector_on_start,
+        "shadingAids": {
+            "axisLighting": settings.axis_lighting,
+            "edges": settings.edges,
+            "normalColors": settings.normal_colors,
+        },
     });
     format!("window.__MODEL_LENS_CONFIG__ = {config};")
 }
@@ -586,6 +593,12 @@ fn listen_to_viewers(app: &AppHandle) {
             }
             WebviewToHost::InspectorOnStartChanged { value } => {
                 state.settings.update(|s| s.inspector_on_start = value);
+            }
+            // 표시 보조도 배경·그리드와 같은 부류 — 사람 단위의 표시 취향이라 전역 설정이고,
+            // 열려 있는 모든 창에 즉시 퍼진다.
+            WebviewToHost::ShadingAidChanged { aid, on } => {
+                state.settings.update(|s| s.set_shading_aid(&aid, on));
+                broadcast(&handle, HostToWebview::SetShadingAid { aid, on });
             }
             // 빈 창의 `Open…` — 대화상자는 호스트만 띄울 수 있다.
             WebviewToHost::OpenRequested => choose_file(&handle, Some(label)),
