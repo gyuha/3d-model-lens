@@ -30,7 +30,7 @@ export async function waitForViewer(
 }
 
 /** 접었다 펼 수 있는 패널 섹션. 애니메이션 섹션은 늘 펼쳐진 채 시작하므로 여기 없다. */
-export const PANEL_SECTIONS = ['measure', 'display', 'shortcuts', 'debug'] as const;
+export const PANEL_SECTIONS = ['measure', 'display', 'debug'] as const;
 export type PanelSection = (typeof PANEL_SECTIONS)[number];
 
 export async function isSectionExpanded(page: Page, name: PanelSection): Promise<boolean> {

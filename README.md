@@ -24,8 +24,8 @@ VS Code 확장 [`gyuha/vscode-3d-model-lens`](https://github.com/gyuha/vscode-3d
 
 ### 단축키 (Shortcuts)
 
-숫자키로 같은 곳에 갈 수 있다. 큐브 면에 마우스를 올리면 그 면의 키가 보이고, 뷰어 패널의
-`SHORTCUTS` 섹션과 `View → Camera` 메뉴에도 같은 목록이 있다.
+숫자키로 같은 곳에 갈 수 있다. 큐브 면에 마우스를 올리면 그 면의 키가 보이고,
+`View → Camera` 메뉴에도 같은 목록이 있다.
 
 | 키 | 이동 |
 |---|---|

@@ -370,22 +370,6 @@
   #measure-actions { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
   #measure-actions .state { color: var(--ml-fg-dim); font-size: 0.8em; }
 
-  /* 단축키 목록 — 키와 목적지를 두 열로 세운다. 키는 등폭이라 자릿수가 흔들리지 않는다. */
-  #shortcut-list {
-    display: grid; grid-template-columns: auto 1fr;
-    gap: 0.125rem 0.625rem; margin: 0; align-items: baseline;
-  }
-  #shortcut-list dt {
-    font-family: var(--ml-mono, monospace); font-weight: 700;
-    text-align: center; min-width: 1.1rem;
-    border: 1px solid var(--ml-border, rgba(128,128,128,0.35));
-    padding: 0 0.25rem; font-size: 0.9em;
-  }
-  #shortcut-list dd {
-    margin: 0; text-transform: uppercase; font-weight: 700; letter-spacing: 1.4px;
-    font-size: 0.8em; color: var(--ml-fg-dim);
-  }
-
   #animation-row { display: flex; align-items: center; gap: 0.5rem; }
   #animation-row select { flex: 1; min-width: 0; }
 

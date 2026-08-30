@@ -937,18 +937,10 @@ test.describe('숫자키 카메라 단축키', () => {
     await expect(page.locator('#nav-cube-home title')).toHaveText('Reset view (0)');
   });
 
-  test('패널의 SHORTCUTS 섹션이 일곱 항목을 낸다 — 표에서 생성된다', async ({ page }) => {
-    await page.goto('/?fixture=cube.glb');
-    expect(await waitForViewer(page)).toBe('ready');
-
-    await expect(page.locator('#shortcut-list dt')).toHaveText(['0', '1', '2', '3', '4', '5', '6']);
-    await expect(page.locator('#shortcut-list dd').first()).toHaveText('기본 위치');
-    await expect(page.locator('#shortcut-list dd').nth(1)).toHaveText('TOP');
-  });
 });
 
 test.describe('패널 섹션 아코디언', () => {
-  test('처음 열면 네 섹션이 접혀 있고, 헤더를 클릭하면 그 섹션만 펼쳐진다', async ({ page }) => {
+  test('처음 열면 세 섹션이 접혀 있고, 헤더를 클릭하면 그 섹션만 펼쳐진다', async ({ page }) => {
     await page.goto('/?fixture=cube.stl');
     // 접힘 상태 자체가 검사 대상이므로 헬퍼의 자동 펼치기를 끈다.
     expect(await waitForViewer(page, { expandSections: false })).toBe('ready');

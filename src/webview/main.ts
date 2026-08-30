@@ -6,7 +6,6 @@ import type { Chrome } from './chrome.js';
 import { extentSizes } from './geometry.js';
 import type { MeasurementTool } from './measurement.js';
 import {
-  CAMERA_SHORTCUTS,
   shortcutForKey,
   shortcutForTarget,
   type CameraShortcut,
@@ -91,7 +90,6 @@ async function boot(): Promise<void> {
     wirePanel(viewer.chrome, viewer);
     wireNavCube(viewer);
     wireCameraShortcuts(viewer);
-    renderShortcutList();
 
     // 뷰어 상태를 DOM 에 노출한다 — 자동 검증(헤드리스 렌더 테스트)이 붙을 지점이고,
     // 파트 3/4 의 치수·측정 단정도 여기를 읽는다.
@@ -126,7 +124,7 @@ async function boot(): Promise<void> {
  * `animation` 이 목록에 없는 이유: 그 섹션은 그룹이 있는 파일에서만 존재하고, 있으면 늘 펼쳐진
  * 채 시작한다 — 접힘 상태를 저장할 것이 없다.
  */
-const PANEL_SECTIONS = ['measure', 'display', 'shortcuts', 'debug'] as const;
+const PANEL_SECTIONS = ['measure', 'display', 'debug'] as const;
 export type PanelSectionName = (typeof PANEL_SECTIONS)[number];
 
 /**
@@ -209,20 +207,6 @@ function wirePanel(chrome: Chrome, viewer: Viewer): void {
  * 때문에, 포커스를 돌려놓지 않으면 "숫자키로 면을 보고 방향키로 미세 조정"이 끊긴다
  * (`wireNavCube` 의 실측 주석 참조).
  */
-/** 단축키 목록을 패널에 채운다. 항목은 표에서 생성한다 — HTML 에 적어 두면 갈라진다. */
-function renderShortcutList(): void {
-  const list = requireElement<HTMLDListElement>('shortcut-list');
-  list.replaceChildren(
-    ...CAMERA_SHORTCUTS.flatMap((shortcut) => {
-      const key = document.createElement('dt');
-      key.textContent = shortcut.key;
-      const name = document.createElement('dd');
-      name.textContent = shortcut.title;
-      return [key, name];
-    }),
-  );
-}
-
 function wireCameraShortcuts(viewer: Viewer): void {
   document.addEventListener('keydown', (event) => {
     if (event.metaKey || event.ctrlKey || event.altKey) {
