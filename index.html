@@ -16,15 +16,27 @@
   <div id="panel" hidden>
     <div class="m-stripe"></div>
 
-    <div class="panel-head">
-      <span class="caption">Dimensions</span>
-      <div id="dimensions">
-        <span class="axis caption">X</span><span class="value" id="dim-x">—</span>
-        <span class="axis caption">Y</span><span class="value" id="dim-y">—</span>
-        <span class="axis caption">Z</span><span class="value" id="dim-z">—</span>
-      </div>
+    <!-- 애니메이션 재생. 탭이 아니라 고정 행이다 — 그룹이 있는 파일에서만 드러난다.
+         216px 패널의 안쪽 폭 192px 를 세 탭 이름이 여백 없이 채워 네 번째 탭이 들어갈 자리가
+         없고, 재생/일시정지는 설정 묶음이 아니라 트랜스포트다 (ADR 260905-222900). -->
+    <div id="animation-row" hidden>
+      <button type="button" class="action" id="animation-toggle">Pause</button>
+      <select id="animation-select" aria-label="Animation"></select>
+    </div>
 
-      <div id="unit-row">
+    <div class="panel-tabs" role="tablist">
+      <button type="button" class="panel-tab" id="tab-measure"
+              role="tab" aria-selected="true" aria-controls="measure-body">Measure</button>
+      <button type="button" class="panel-tab" id="tab-display"
+              role="tab" aria-selected="false" aria-controls="display-body">Display</button>
+      <button type="button" class="panel-tab" id="tab-debug"
+              role="tab" aria-selected="false" aria-controls="debug-body">Debug</button>
+    </div>
+
+    <div class="tab-body" id="measure-body" role="tabpanel" aria-labelledby="tab-measure">
+      <label><input type="checkbox" id="toggle-measure" /> Enabled</label>
+      <label><input type="checkbox" id="toggle-snap" checked /> Vertex snap</label>
+      <div class="panel-row">
         <label for="unit">Unit</label>
         <select id="unit">
           <option value="auto">Auto</option>
@@ -34,72 +46,38 @@
           <option value="in">in</option>
         </select>
       </div>
+      <div class="tab-rule"></div>
+      <div id="measure-list"></div>
+      <div id="measure-actions">
+        <span class="state" id="measure-state"></span>
+        <button type="button" class="action" id="measure-clear">Clear all</button>
+      </div>
     </div>
 
-    <section class="panel-section" id="animation-section" hidden>
-      <button type="button" class="section-header" id="animation-header"
-              aria-expanded="true" aria-controls="animation-body">
-        <span>Animation</span><span class="chevron" aria-hidden="true">▾</span>
-      </button>
-      <div class="section-body" id="animation-body">
-        <div id="animation-row">
-          <button type="button" class="action" id="animation-toggle">Pause</button>
-          <select id="animation-select" aria-label="Animation"></select>
-        </div>
+    <div class="tab-body" id="display-body" hidden role="tabpanel" aria-labelledby="tab-display">
+      <label><input type="checkbox" id="toggle-grid" checked /> Grid</label>
+      <label><input type="checkbox" id="toggle-axis-lighting" /> Axis lighting</label>
+      <label><input type="checkbox" id="toggle-edges" /> Edges</label>
+      <label><input type="checkbox" id="toggle-normal-colors" /> Normal colors</label>
+      <div class="tab-rule"></div>
+      <div class="panel-row">
+        <label for="decimals">Decimals</label>
+        <input type="number" id="decimals" min="0" max="10" step="1" />
       </div>
-    </section>
+      <div class="panel-row">
+        <label for="background-select">Background</label>
+        <select id="background-select">
+          <option value="theme">Theme</option>
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+        </select>
+      </div>
+    </div>
 
-    <section class="panel-section" id="measure-section">
-      <button type="button" class="section-header" id="measure-header"
-              aria-expanded="false" aria-controls="measure-body">
-        <span>Measure</span><span class="chevron" aria-hidden="true">▸</span>
-      </button>
-      <div class="section-body" id="measure-body" hidden>
-        <label><input type="checkbox" id="toggle-measure" /> Enabled</label>
-        <label><input type="checkbox" id="toggle-snap" checked /> Vertex snap</label>
-        <div id="measure-actions">
-          <span class="state" id="measure-state"></span>
-          <button type="button" class="action" id="measure-clear">Clear all</button>
-        </div>
-        <div id="measure-list"></div>
-      </div>
-    </section>
-
-    <section class="panel-section" id="display-section">
-      <button type="button" class="section-header" id="display-header"
-              aria-expanded="false" aria-controls="display-body">
-        <span>Display</span><span class="chevron" aria-hidden="true">▸</span>
-      </button>
-      <div class="section-body" id="display-body" hidden>
-        <label><input type="checkbox" id="toggle-grid" checked /> Grid</label>
-        <label><input type="checkbox" id="toggle-axis-lighting" /> Axis lighting</label>
-        <label><input type="checkbox" id="toggle-edges" /> Edges</label>
-        <label><input type="checkbox" id="toggle-normal-colors" /> Normal colors</label>
-        <div id="decimals-row">
-          <label for="decimals">Decimals</label>
-          <input type="number" id="decimals" min="0" max="10" step="1" />
-        </div>
-        <div id="background-row">
-          <label for="background-select">Background</label>
-          <select id="background-select">
-            <option value="theme">Theme</option>
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
-          </select>
-        </div>
-      </div>
-    </section>
-
-    <section class="panel-section" id="debug-section">
-      <button type="button" class="section-header" id="debug-header"
-              aria-expanded="false" aria-controls="debug-body">
-        <span>Debug</span><span class="chevron" aria-hidden="true">▸</span>
-      </button>
-      <div class="section-body" id="debug-body" hidden>
-        <label><input type="checkbox" id="toggle-inspector" /> Inspector</label>
-        <label><input type="checkbox" id="toggle-inspector-start" /> Open on start</label>
-      </div>
-    </section>
+    <div class="tab-body" id="debug-body" hidden role="tabpanel" aria-labelledby="tab-debug">
+      <label><input type="checkbox" id="toggle-inspector" /> Inspector</label>
+      <label><input type="checkbox" id="toggle-inspector-start" /> Open on start</label>
+    </div>
   </div>
 
   <div id="labels"></div>

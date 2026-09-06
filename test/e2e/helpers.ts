@@ -1,4 +1,4 @@
-import type { Page, Request } from '@playwright/test';
+import { expect, type Page, type Request } from '@playwright/test';
 
 export interface Point3 {
   x: number;
@@ -9,13 +9,12 @@ export interface Point3 {
 /**
  * 뷰어가 로드를 끝낼 때까지 기다린다. `error` 면 그대로 돌려주므로 호출부가 판단한다.
  *
- * 로드가 끝나면 **패널 섹션을 전부 펼친다**. 섹션은 기본으로 접혀 있고 접힌 안의 요소는
- * 클릭할 수 없는데, 이 헬퍼를 쓰는 테스트들이 주장하는 것은 아코디언이 아니라 그 안의
- * 기능이기 때문이다. 접힘 상태 자체를 보려면 `expandSections: false` 로 끈다.
+ * `tab` 을 주면 로드 후 그 탭을 연다. 패널은 Measure 탭이 열린 채로 시작하므로 Display /
+ * Debug 안의 컨트롤을 만지는 테스트는 이것을 줘야 한다 — 닫힌 탭 안의 요소는 클릭할 수 없다.
  */
 export async function waitForViewer(
   page: Page,
-  options: { expandSections?: boolean } = {},
+  options: { tab?: PanelTab } = {},
 ): Promise<'ready' | 'error'> {
   const state = await page
     .locator('#root[data-state]')
@@ -23,37 +22,39 @@ export async function waitForViewer(
   if (state === 'error') {
     return 'error';
   }
-  if (options.expandSections !== false) {
-    await expandAllSections(page);
+  if (options.tab) {
+    await openTab(page, options.tab);
   }
   return 'ready';
 }
 
-/** 접었다 펼 수 있는 패널 섹션. 애니메이션 섹션은 늘 펼쳐진 채 시작하므로 여기 없다. */
-export const PANEL_SECTIONS = ['measure', 'display', 'debug'] as const;
-export type PanelSection = (typeof PANEL_SECTIONS)[number];
+/** 뷰어 패널의 탭. 애니메이션은 탭이 아니라 고정 행이므로 여기 없다. */
+export const PANEL_TABS = ['measure', 'display', 'debug'] as const;
+export type PanelTab = (typeof PANEL_TABS)[number];
 
-export async function isSectionExpanded(page: Page, name: PanelSection): Promise<boolean> {
-  return (await page.locator(`#${name}-header`).getAttribute('aria-expanded')) === 'true';
-}
-
-export async function toggleSection(page: Page, name: PanelSection): Promise<void> {
-  await page.locator(`#${name}-header`).click();
+/**
+ * 이 탭이 열려 있음을 단정한다.
+ *
+ * `getAttribute` 로 한 번 읽지 않는 이유: 탭은 호스트 메시지(`setMeasureMode`)로도 바뀌는데
+ * 그 처리는 비동기다. 한 번 읽으면 메시지가 처리되기 전에 읽어 **간헐적으로** 실패한다.
+ * `expect().toHaveAttribute` 는 조건이 맞을 때까지 재시도한다.
+ */
+export async function expectActiveTab(page: Page, name: PanelTab): Promise<void> {
+  await expect(page.locator(`#tab-${name}`)).toHaveAttribute('aria-selected', 'true');
+  for (const other of PANEL_TABS.filter((tab) => tab !== name)) {
+    await expect(page.locator(`#tab-${other}`)).toHaveAttribute('aria-selected', 'false');
+  }
 }
 
 /**
- * 모든 패널 섹션을 펼친다.
+ * 탭 하나를 연다.
  *
- * 섹션은 기본으로 접혀 있고, 접힌 섹션 안의 요소는 클릭할 수 없다. 기존 테스트들이 주장하는
- * 것은 **측정·배경·그리드의 동작**이지 아코디언이 아니므로, 각 테스트 본문에 펼치기 클릭을
- * 심는 대신 여기서 한 번에 연다. 아코디언 자체는 전용 테스트가 검증한다.
+ * 아코디언 시절의 `expandAllSections` 를 대신한다 — 탭은 한 번에 하나만 열리므로 "전부 펼치기"
+ * 라는 것이 없다. 그래서 컨트롤을 만지는 테스트는 그 컨트롤이 사는 탭을 **직접 말해야** 한다
+ * (`waitForViewer(page, { tab: 'display' })`).
  */
-export async function expandAllSections(page: Page): Promise<void> {
-  for (const name of PANEL_SECTIONS) {
-    if (!(await isSectionExpanded(page, name))) {
-      await toggleSection(page, name);
-    }
-  }
+export async function openTab(page: Page, name: PanelTab): Promise<void> {
+  await page.locator(`#tab-${name}`).click();
 }
 
 export async function extents(page: Page): Promise<[number, number, number]> {
@@ -126,6 +127,35 @@ export function axisPair(
     }
   }
   return undefined;
+}
+
+/**
+ * 축에 평행한 모서리 하나를 **실제 클릭으로** 측정한다.
+ *
+ * 치수 표시를 없앤 뒤(ADR 260905-222900) 단위와 자릿수가 화면에 드러나는 곳은 **측정 라벨뿐**
+ * 이다. 그래서 그 두 설정을 검증하는 테스트들이 이 경로를 지난다 — 예전에는 `#dim-x` 를 읽으면
+ * 됐지만 그 요소가 더는 없다.
+ *
+ * 측정 모드를 켜면 Measure 탭이 열리므로(applyMeasureMode), 호출 뒤 다른 탭을 만지려면 다시
+ * 열어야 한다.
+ */
+export async function measureEdge(page: Page, axis: 'x' | 'y' | 'z', gap: number): Promise<void> {
+  await sendHostMessage(page, { type: 'setMeasureMode', active: true });
+  await expect(page.locator('#root')).toHaveAttribute('data-measure', 'on');
+
+  const targets = await vertexTargets(page);
+  const pair = axisPair(targets, axis, gap);
+  expect(pair, `${axis} 축으로 ${gap} 떨어진 정점 쌍을 찾지 못했다`).toBeTruthy();
+  const box = await page.locator('#canvas').boundingBox();
+  expect(box).not.toBeNull();
+  if (!pair || !box) {
+    return;
+  }
+  for (const target of pair) {
+    await page.mouse.click(box.x + target.screen.x, box.y + target.screen.y);
+    await page.waitForTimeout(80);
+  }
+  await expect(page.locator('#measure-list .row')).toHaveCount(1);
 }
 
 /**

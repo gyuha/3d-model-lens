@@ -1,6 +1,6 @@
 [package]
 name = "model-lens"
-version = "0.1.0"
+version = "0.1.1"
 description = "View glTF / GLB / STL models and measure their dimensions"
 authors = ["gyuha"]
 edition = "2021"

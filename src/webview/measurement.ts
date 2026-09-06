@@ -175,6 +175,9 @@ export class MeasurementTool {
         visual.label.textContent = this.labelFor(measurement);
       }
     }
+    // 패널 목록도 같은 문자열을 쓴다 — 여기서 알리지 않으면 3D 라벨만 바뀌고 목록은 옛 값을
+    // 그대로 들고 있다. 치수 표시를 없앤 뒤로는 목록이 패널에서 자릿수를 보여 주는 유일한 곳이다.
+    this.onChange();
   }
 
   public select(id: number | undefined): void {

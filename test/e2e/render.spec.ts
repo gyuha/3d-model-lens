@@ -11,11 +11,13 @@ import {
   collectHostMessages,
   extents,
   isIdle,
-  PANEL_SECTIONS,
+  measureEdge,
+  PANEL_TABS,
   readyMeshes,
   renderCount,
   sendHostMessage,
-  toggleSection,
+  openTab,
+  expectActiveTab,
   vertexTargets,
   waitForIdle,
   waitForViewer,
@@ -105,12 +107,14 @@ test.describe('치수', () => {
     await page.goto('/?fixture=cube.glb&unit=auto');
     expect(await waitForViewer(page)).toBe('ready');
     await expect(page.locator('#root')).toHaveAttribute('data-unit', 'm');
-    await expect(page.locator('#dim-x')).toHaveText('5.000 m');
+    await measureEdge(page, 'x', 5);
+    await expect(page.locator('#measure-list .row .pick')).toHaveText('5.000 m');
 
     await page.goto('/?fixture=cube.stl&unit=auto');
     expect(await waitForViewer(page)).toBe('ready');
     await expect(page.locator('#root')).toHaveAttribute('data-unit', 'none');
-    await expect(page.locator('#dim-x')).toHaveText('10.000');
+    await measureEdge(page, 'x', 10);
+    await expect(page.locator('#measure-list .row .pick')).toHaveText('10.000');
   });
 });
 
@@ -665,7 +669,7 @@ test.describe('유휴 렌더 중단', () => {
 
   test('표시 토글도 다시 그리게 만든다', async ({ page }) => {
     await page.goto('/?fixture=cube.stl');
-    expect(await waitForViewer(page)).toBe('ready');
+    expect(await waitForViewer(page, { tab: 'display' })).toBe('ready');
     expect(await waitForIdle(page)).toBe(true);
     const idleCount = await renderCount(page);
 
@@ -781,7 +785,7 @@ test.describe('Inspector 패널 토글', () => {
   // 아이콘(아래 테스트의 setInspector 메시지)이다.
   test('패널 체크박스로 Inspector 를 켤 수 있다', async ({ page }) => {
     await page.goto('/?fixture=cube.glb');
-    expect(await waitForViewer(page)).toBe('ready');
+    expect(await waitForViewer(page, { tab: 'debug' })).toBe('ready');
 
     const checkbox = page.locator('#toggle-inspector');
     await expect(checkbox).not.toBeChecked();
@@ -864,7 +868,7 @@ test.describe('배경 드롭다운', () => {
     page,
   }) => {
     await page.goto('/?fixture=cube.glb&background=theme&theme=dark');
-    expect(await waitForViewer(page)).toBe('ready');
+    expect(await waitForViewer(page, { tab: 'display' })).toBe('ready');
     const messages = await collectHostMessages(page);
 
     await page.locator('#background-select').selectOption('light');
@@ -892,44 +896,54 @@ test.describe('배경 드롭다운', () => {
   });
 });
 
+// 자릿수가 눈에 보이는 곳은 **측정 라벨뿐**이다 — 치수 표시를 없앴다(ADR 260905-222900).
+// 그래서 네 테스트 모두 모서리를 하나 찍고 그 라벨을 읽는다.
 test.describe('표시 설정 — 소수 자릿수', () => {
   test('설정값이 초기 자릿수를 정한다 — 초기값의 출처가 전역 설정이다', async ({ page }) => {
-    await page.goto('/?fixture=cube.glb&decimals=1');
+    await page.goto('/?fixture=cube.stl&unit=mm&decimals=1');
     expect(await waitForViewer(page)).toBe('ready');
     await expect(page.locator('#decimals')).toHaveValue('1');
-    await expect(page.locator('#dim-x')).toHaveText('5.0 m');
+
+    await measureEdge(page, 'x', 10);
+
+    await expect(page.locator('#measure-list .row .pick')).toHaveText('10.0 mm');
   });
 
-  test('자릿수를 바꾸면 치수가 즉시 따라오고 호스트에 알린다', async ({ page }) => {
-    await page.goto('/?fixture=cube.glb&decimals=3');
+  test('자릿수를 바꾸면 측정 라벨이 즉시 따라오고 호스트에 알린다', async ({ page }) => {
+    await page.goto('/?fixture=cube.stl&unit=mm&decimals=3');
     expect(await waitForViewer(page)).toBe('ready');
+    await measureEdge(page, 'x', 10);
+    await expect(page.locator('#measure-list .row .pick')).toHaveText('10.000 mm');
     const messages = await collectHostMessages(page);
 
+    // 측정 모드를 켜면 Measure 탭이 열리므로 Display 탭을 다시 연다.
+    await openTab(page, 'display');
     await page.locator('#decimals').fill('0');
     await page.locator('#decimals').dispatchEvent('change');
 
-    await expect(page.locator('#dim-x')).toHaveText('5 m');
+    await expect(page.locator('#measure-list .row .pick')).toHaveText('10 mm');
     expect(await messages()).toContainEqual({ type: 'decimalsChanged', decimals: 0 });
   });
 
   test('범위를 벗어난 값은 0–10 으로 잘린다 — 손으로 아무 값이나 넣을 수 있다', async ({ page }) => {
     await page.goto('/?fixture=cube.glb');
-    expect(await waitForViewer(page)).toBe('ready');
+    expect(await waitForViewer(page, { tab: 'display' })).toBe('ready');
     await page.locator('#decimals').fill('99');
     await page.locator('#decimals').dispatchEvent('change');
     await expect(page.locator('#decimals')).toHaveValue('10');
   });
 
-  test('호스트가 자릿수 변경을 알리면 입력과 치수가 함께 따라온다 — 나란히 열린 다른 창이 이 경로로 갱신된다', async ({
+  test('호스트가 자릿수 변경을 알리면 입력과 측정 라벨이 함께 따라온다 — 나란히 열린 다른 창이 이 경로로 갱신된다', async ({
     page,
   }) => {
-    await page.goto('/?fixture=cube.glb&decimals=3');
+    await page.goto('/?fixture=cube.stl&unit=mm&decimals=3');
     expect(await waitForViewer(page)).toBe('ready');
+    await measureEdge(page, 'x', 10);
 
     await sendHostMessage(page, { type: 'setDecimals', decimals: 1 });
 
     await expect(page.locator('#decimals')).toHaveValue('1');
-    await expect(page.locator('#dim-y')).toHaveText('6.0 m');
+    await expect(page.locator('#measure-list .row .pick')).toHaveText('10.0 mm');
   });
 });
 
@@ -945,7 +959,7 @@ test.describe('그리드 설정', () => {
 
   test('체크박스를 끄면 호스트에 알린다 — 호스트가 전역 설정에 저장한다', async ({ page }) => {
     await page.goto('/?fixture=cube.glb');
-    expect(await waitForViewer(page)).toBe('ready');
+    expect(await waitForViewer(page, { tab: 'display' })).toBe('ready');
     await expect(page.locator('#toggle-grid')).toBeChecked();
     const messages = await collectHostMessages(page);
 
@@ -1158,7 +1172,7 @@ test.describe('숫자키 카메라 단축키', () => {
 
   test('입력칸에 포커스가 있으면 숫자키는 값이 되고 카메라는 그대로다', async ({ page }) => {
     await page.goto('/?fixture=cube.glb');
-    expect(await waitForViewer(page)).toBe('ready');
+    expect(await waitForViewer(page, { tab: 'display' })).toBe('ready');
     const before = await cameraAxes(page);
 
     await page.locator('#decimals').focus();
@@ -1193,66 +1207,107 @@ test.describe('숫자키 카메라 단축키', () => {
 
 });
 
-test.describe('패널 섹션 아코디언', () => {
-  test('처음 열면 세 섹션이 접혀 있고, 헤더를 클릭하면 그 섹션만 펼쳐진다', async ({ page }) => {
+test.describe('패널 탭', () => {
+  test('처음 열면 Measure 탭이 열려 있고, 탭을 누르면 그것만 열린다', async ({ page }) => {
     await page.goto('/?fixture=cube.stl');
-    // 접힘 상태 자체가 검사 대상이므로 헬퍼의 자동 펼치기를 끈다.
-    expect(await waitForViewer(page, { expandSections: false })).toBe('ready');
+    expect(await waitForViewer(page)).toBe('ready');
 
-    for (const name of PANEL_SECTIONS) {
-      await expect(page.locator(`#${name}-header`)).toHaveAttribute('aria-expanded', 'false');
-      await expect(page.locator(`#${name}-body`)).toBeHidden();
-    }
-    // 치수와 단위는 섹션이 아니므로 늘 보인다 — 접어서 숨길 수 있으면 안 된다.
-    await expect(page.locator('#dim-x')).toBeVisible();
+    // 아코디언과 다르다 — "아무것도 안 열림" 상태가 없고 늘 하나가 열려 있다.
+    await expectActiveTab(page, 'measure');
+    await expect(page.locator('#measure-body')).toBeVisible();
+    await expect(page.locator('#display-body')).toBeHidden();
+    await expect(page.locator('#debug-body')).toBeHidden();
+    // 단위는 Measure 탭 안으로 들어갔다 — 늘 열려 있던 머리는 사라졌다.
     await expect(page.locator('#unit')).toBeVisible();
 
-    await toggleSection(page, 'display');
-    await expect(page.locator('#display-header')).toHaveAttribute('aria-expanded', 'true');
+    await openTab(page, 'display');
+    await expectActiveTab(page, 'display');
     await expect(page.locator('#toggle-grid')).toBeVisible();
-    // 다른 섹션은 그대로 접혀 있다 — 하나만 열리는 배타 아코디언이 아니다.
     await expect(page.locator('#measure-body')).toBeHidden();
-    await expect(page.locator('#debug-body')).toBeHidden();
 
-    await toggleSection(page, 'display');
-    await expect(page.locator('#display-header')).toHaveAttribute('aria-expanded', 'false');
-    await expect(page.locator('#toggle-grid')).toBeHidden();
+    await openTab(page, 'debug');
+    await expectActiveTab(page, 'debug');
+    await expect(page.locator('#toggle-inspector')).toBeVisible();
+    await expect(page.locator('#display-body')).toBeHidden();
   });
 
-  test('측정 모드를 켜면 MEASURE 가 자동으로 펼쳐진다 — 끌 때는 접지 않는다', async ({ page }) => {
+  /**
+   * 활성 표시가 **색 하나에 걸려 있지 않은지** 본다. 라이트 테마는 흐린 전경색을 본문색과 같게
+   * 두므로 색만으로는 아무 일도 하지 않는다 (ADR 260905-222900 · 260826-094348).
+   */
+  test('활성 탭은 굵기와 밑줄로 구별된다 — 색에만 의존하지 않는다', async ({ page }) => {
     await page.goto('/?fixture=cube.stl');
-    expect(await waitForViewer(page, { expandSections: false })).toBe('ready');
-    await expect(page.locator('#measure-body')).toBeHidden();
+    expect(await waitForViewer(page)).toBe('ready');
 
-    // 제목 표시줄 아이콘 경로. 이 경로로 켰을 때 섹션이 접혀 있으면 측정 목록이 보이지 않는다.
+    const weightOf = (id: string) =>
+      page.locator(id).evaluate((el) => getComputedStyle(el).fontWeight);
+    const underlineOf = (id: string) =>
+      page.locator(id).evaluate((el) => getComputedStyle(el).boxShadow);
+
+    expect(await weightOf('#tab-measure')).toBe('700');
+    expect(await weightOf('#tab-display')).not.toBe('700');
+    // 활성 탭의 밑줄은 투명이 아니다 — 비활성은 투명한 자리만 잡아 둔다.
+    expect(await underlineOf('#tab-measure')).not.toContain('rgba(0, 0, 0, 0)');
+    expect(await underlineOf('#tab-display')).toContain('rgba(0, 0, 0, 0)');
+  });
+
+  test('치수 머리가 없다 — 바운딩 박스는 계산되지만 화면에 없다', async ({ page }) => {
+    await page.goto('/?fixture=cube.stl&unit=mm');
+    expect(await waitForViewer(page)).toBe('ready');
+
+    // 화면에서 사라진 것: 늘 열려 있던 치수 3행.
+    await expect(page.locator('#dimensions')).toHaveCount(0);
+    // 그러나 계산은 남는다 — 카메라 프레이밍과 이 시임이 쓴다 (ADR 260905-222900).
+    expect(await extents(page)).toEqual([10, 20, 30]);
+  });
+
+  test('측정 모드를 켜면 Measure 탭이 자동으로 열린다', async ({ page }) => {
+    await page.goto('/?fixture=cube.stl');
+    expect(await waitForViewer(page, { tab: 'display' })).toBe('ready');
+    await expectActiveTab(page, 'display');
+
+    // 메뉴 경로. 이 경로로 켰을 때 다른 탭이 열려 있으면 측정 목록이 보이지 않는다.
     await sendHostMessage(page, { type: 'setMeasureMode', active: true });
-    await expect(page.locator('#measure-header')).toHaveAttribute('aria-expanded', 'true');
+    await expectActiveTab(page, 'measure');
     await expect(page.locator('#measure-list')).toBeVisible();
 
+    // 끌 때는 탭을 되돌리지 않는다 — 사용자가 보고 있던 자리를 빼앗지 않는다.
     await sendHostMessage(page, { type: 'setMeasureMode', active: false });
-    await expect(page.locator('#measure-header')).toHaveAttribute('aria-expanded', 'true');
+    await expectActiveTab(page, 'measure');
   });
 
+  test('탭 셋이 전부 Tab 키로 닿는다 — 화살표 이동 없이도 조작 가능하다', async ({ page }) => {
+    await page.goto('/?fixture=cube.stl');
+    expect(await waitForViewer(page)).toBe('ready');
+
+    for (const tab of PANEL_TABS) {
+      await page.locator(`#tab-${tab}`).focus();
+      await expect(page.locator(`#tab-${tab}`)).toBeFocused();
+    }
+    // Enter 로 열린다 — <button> 이므로 공짜다.
+    await page.locator('#tab-debug').press('Enter');
+    await expectActiveTab(page, 'debug');
+  });
 });
 
 test.describe('패널 숨기기', () => {
-  test('호스트가 숨기면 패널이 사라지고, 되살리면 접힘 상태를 유지한 채 돌아온다', async ({
+  test('호스트가 숨기면 패널이 사라지고, 되살리면 열려 있던 탭 그대로 돌아온다', async ({
     page,
   }) => {
     await page.goto('/?fixture=cube.stl');
-    expect(await waitForViewer(page, { expandSections: false })).toBe('ready');
+    expect(await waitForViewer(page, { tab: 'display' })).toBe('ready');
     const messages = await collectHostMessages(page);
 
-    await toggleSection(page, 'display');
     await sendHostMessage(page, { type: 'setPanelVisible', visible: false });
     await expect(page.locator('#panel')).toBeHidden();
     await expect(page.locator('#root')).toHaveAttribute('data-panel', 'hidden');
-    // 호스트에 알리지 않으면 다음 아이콘 클릭의 토글 방향이 뒤집힌다.
+    // 호스트에 알리지 않으면 다음 메뉴 클릭의 토글 방향이 뒤집힌다.
     expect(await messages()).toContainEqual({ type: 'panelState', visible: false });
 
     await sendHostMessage(page, { type: 'setPanelVisible', visible: true });
     await expect(page.locator('#panel')).toBeVisible();
-    await expect(page.locator('#display-header')).toHaveAttribute('aria-expanded', 'true');
+    // 숨겼다 되살려도 사용자가 보고 있던 탭이 유지된다.
+    await expectActiveTab(page, 'display');
   });
 
 });

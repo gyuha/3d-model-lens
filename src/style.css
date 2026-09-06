@@ -78,8 +78,15 @@
       #0066b1 0 33.33%, #1c69d4 33.33% 66.66%, #e22718 66.66% 100%);
   }
 
-  /* 대문자 + 1.4px 트래킹의 "machined" 라벨 — 굵기가 아니라 이것이 대비를 진다. */
-  .caption, #panel label, .section-header, .overlay-title {
+  /*
+   * 대문자 + 1.4px 트래킹의 "machined" 라벨 — 굵기가 아니라 이것이 대비를 진다.
+   *
+   * **옵션 라벨(체크박스·행 라벨)은 여기 없다.** 패널의 모든 문자열을 대문자로 만들면 여덟 줄이
+   * 전부 같은 질감이 되어 위계가 아니라 텍스처가 된다. 대문자는 **구조**(탭 이름 · 오버레이
+   * 제목 · 버튼)만 진다. 라이트 테마에서 흐린 색이 위계를 지지 못하는 것도 같은 방향의 이유다
+   * (ADR 260905-222900).
+   */
+  .panel-tab, .overlay-title {
     text-transform: uppercase; font-weight: 700; letter-spacing: 1.4px;
   }
 
@@ -119,12 +126,13 @@
     font-size: 0.85em;
   }
   #panel[hidden] { display: none; }
+  /* 문장형 · 패널 기본 크기다 — 0.8em 로 줄이면 8.8px 가 되어 판독성을 잃는다. */
   #panel label {
     display: flex; align-items: center; gap: 0.5rem;
-    cursor: pointer; user-select: none; font-size: 0.8em;
+    cursor: pointer; user-select: none;
   }
   #panel input[type='number'] {
-    width: 3.5rem;
+    width: 3.25rem;
     background: var(--ml-input-bg);
     color: var(--ml-input-fg);
     border: 1px solid var(--ml-input-border, transparent);
@@ -145,50 +153,47 @@
     padding: 0.125rem 0.5rem; cursor: pointer; white-space: nowrap;
   }
 
-  /* 늘 열려 있는 머리 — 치수와 모델 단위. 패널 섹션이 아니다. */
-  .panel-head {
-    display: flex; flex-direction: column; gap: 0.5rem;
-    padding: 0.625rem 0.75rem 0.75rem;
-  }
-  .caption { font-size: 0.8em; color: var(--ml-fg-dim); }
-
-  #dimensions {
-    display: grid; grid-template-columns: auto 1fr;
-    gap: 0.125rem 0.625rem; align-items: baseline;
-  }
-  #dimensions .value {
-    font-family: var(--ml-mono, monospace);
-    font-weight: 700; font-size: 1.45em; line-height: 1.15;
-    text-align: right; font-variant-numeric: tabular-nums;
-  }
-
-  #unit-row, #background-row, #decimals-row {
+  /* 라벨 + 컨트롤 한 줄. 단위 · 자릿수 · 배경이 같은 모양을 쓴다. */
+  .panel-row {
     display: flex; align-items: center; gap: 0.5rem; justify-content: space-between;
   }
 
-  /* 패널 섹션 — 접었다 펼 수 있는 컨트롤 묶음. */
-  .panel-section {
-    display: flex; flex-direction: column;
-    border-top: 1px solid var(--ml-border, rgba(128,128,128,0.35));
+  .tab-rule {
+    height: 1px; margin: 0.125rem 0;
+    background: var(--ml-border, rgba(128,128,128,0.35));
   }
-  .panel-section[hidden] { display: none; }
-  .section-header {
-    display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
-    width: 100%; box-sizing: border-box; padding: 0.4375rem 0.75rem;
-    background: none; border: none; color: inherit;
-    font-family: inherit; font-size: 0.8em; text-align: left; cursor: pointer;
+
+  /*
+   * 탭 줄 — 아코디언을 대신한다. 한 번에 하나만 열리므로 패널 세로 길이가 상태에 따라 튀지 않고,
+   * 섹션 헤더 셋(각 26px)과 셰브런이 통째로 사라진다.
+   *
+   * **활성 표시를 색 하나에 걸지 않는다.** 라이트 테마는 흐린 전경색을 본문색과 같게 두므로,
+   * 흐린 색으로 비활성을 표현하는 흔한 방법이 아무 일도 하지 않는다. 그래서 **밑줄(형태) +
+   * 700(굵기)** 이 함께 진다 — ADR 260826-094348 의 "색에만 의존하지 않는다" 와 같은 요구다.
+   */
+  .panel-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--ml-border, rgba(128,128,128,0.35));
   }
-  .section-header:hover { background: var(--ml-hover-bg); }
-  .section-header:focus-visible { outline: 1px solid var(--ml-focus); outline-offset: -1px; }
-  .section-header .chevron {
-    color: var(--ml-fg-dim); letter-spacing: 0; font-size: 0.9em;
+  .panel-tab {
+    flex: 1; background: none; border: none; color: inherit;
+    font-family: inherit; font-size: 0.8em; font-weight: 400;
+    padding: 0.5rem 0 0.4375rem; cursor: pointer; white-space: nowrap;
+    box-shadow: inset 0 -2px 0 transparent;
   }
-  .section-body {
+  .panel-tab:hover { background: var(--ml-hover-bg); }
+  .panel-tab:focus-visible { outline: 1px solid var(--ml-focus); outline-offset: -1px; }
+  .panel-tab[aria-selected="true"] {
+    font-weight: 700;
+    box-shadow: inset 0 -2px 0 var(--ml-focus);
+  }
+
+  .tab-body {
     display: flex; flex-direction: column; gap: 0.375rem;
-    padding: 0 0.75rem 0.75rem;
+    padding: 0.625rem 0.75rem 0.75rem;
   }
   /* display:flex 가 hidden 속성을 덮으므로 명시적으로 되돌린다. */
-  .section-body[hidden] { display: none; }
+  .tab-body[hidden] { display: none; }
 
   /*
    * 내비게이션 큐브 — 뷰포트 좌상단. 패널의 right: 0.75rem 과 대칭 위치다.
@@ -371,6 +376,8 @@
   #measure-actions .state { color: var(--ml-fg-dim); font-size: 0.8em; }
 
   #animation-row { display: flex; align-items: center; gap: 0.5rem; }
+  /* .tab-body 와 같은 이유 — display:flex 가 hidden 속성을 덮는다. */
+  #animation-row[hidden] { display: none; }
   #animation-row select { flex: 1; min-width: 0; }
 
 /*

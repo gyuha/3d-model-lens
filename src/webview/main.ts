@@ -1,7 +1,7 @@
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 import { backgroundColorFor, isBackgroundMode, type BackgroundMode } from '../background.js';
 import type { HostToWebview } from '../messages.js';
-import { formatLength, isUnitSetting, resolveUnit, type UnitSetting } from '../units.js';
+import { isUnitSetting, resolveUnit, type UnitSetting } from '../units.js';
 import type { Chrome } from './chrome.js';
 import { extentSizes } from './geometry.js';
 import type { MeasurementTool } from './measurement.js';
@@ -87,15 +87,14 @@ async function boot(): Promise<void> {
 
     loading.hidden = true;
     applyPanelVisible(true);
-    wireSections();
+    wireTabs();
     wirePanel(viewer.chrome, viewer);
     wireNavCube(viewer);
     wireCameraShortcuts(viewer);
 
     // 뷰어 상태를 DOM 에 노출한다 — 자동 검증(헤드리스 렌더 테스트)이 붙을 지점이고,
     // 파트 3/4 의 치수·측정 단정도 여기를 읽는다.
-    const sizes = extentSizes(viewer.extents);
-    const rerenderUnits = wireUnits(sizes, viewer.measure);
+    const rerenderUnits = wireUnits(viewer.measure);
     wireDisplaySettings(rerenderUnits);
     wireMeasurePanel(viewer.measure, viewer);
     wireAnimationPanel(viewer);
@@ -104,7 +103,9 @@ async function boot(): Promise<void> {
 
     root.dataset.state = 'ready';
     root.dataset.meshCount = String(viewer.meshes.length);
-    root.dataset.extents = JSON.stringify(sizes);
+    // 치수 표시는 없앴지만 바운딩 박스 계산은 남는다 — 카메라 프레이밍과 이 테스트 시임이
+    // 쓴다(ADR 260905-222900: 화면에서만 사라진다).
+    root.dataset.extents = JSON.stringify(extentSizes(viewer.extents));
     root.dataset.inspector = 'off';
 
     wireHostMessages(viewer, rerenderUnits);
@@ -121,42 +122,45 @@ async function boot(): Promise<void> {
 }
 
 /**
- * 접었다 펼 수 있는 패널 섹션의 이름. 치수와 모델 단위는 늘 열려 있는 머리이므로 섹션이 아니다.
+ * 뷰어 패널의 탭. 한 번에 하나만 열린다.
  *
- * `animation` 이 목록에 없는 이유: 그 섹션은 그룹이 있는 파일에서만 존재하고, 있으면 늘 펼쳐진
- * 채 시작한다 — 접힘 상태를 저장할 것이 없다.
+ * 아코디언을 대신한다 — 섹션 셋을 다 펼치면 패널 세로가 뷰포트를 거의 다 먹었고, 헤더 셋(각
+ * 26px)과 셰브런이 **컨트롤이 아니라 컨트롤의 목차**로 자리를 썼다 (ADR 260905-222900).
+ *
+ * `animation` 이 목록에 없는 이유: 재생 컨트롤은 탭이 아니라 M 스트라이프 아래 **고정 행**이다.
+ * 216px 패널의 안쪽 폭 192px 를 세 탭 이름이 여백 없이 채워 네 번째가 들어갈 자리가 없고,
+ * 재생/일시정지는 설정 묶음이 아니라 트랜스포트다.
  */
-const PANEL_SECTIONS = ['measure', 'display', 'debug'] as const;
-export type PanelSectionName = (typeof PANEL_SECTIONS)[number];
+const PANEL_TABS = ['measure', 'display', 'debug'] as const;
+export type PanelTabName = (typeof PANEL_TABS)[number];
 
 /**
- * 패널 섹션을 펼치거나 접는다.
+ * 활성 탭을 바꾼다.
  *
- * 접힘은 `hidden` 속성으로 표현한다 — CSS 클래스가 아니라 속성이어야 자동 검증(Playwright)의
- * 가시성 판정과 접근성 트리가 함께 따라온다. `aria-expanded` 는 헤더 버튼이 들고 있다.
+ * 숨김은 `hidden` 속성으로 표현한다 — CSS 클래스가 아니라 속성이어야 자동 검증(Playwright)의
+ * 가시성 판정과 접근성 트리가 함께 따라온다. 활성 표시는 `aria-selected` 가 지고, 화면에서는
+ * 밑줄(형태) + 700(굵기)이 함께 진다 — 색 하나에 걸면 라이트 테마에서 아무 일도 하지 않는다.
  */
-function setSectionExpanded(name: PanelSectionName, expanded: boolean): void {
-  const header = requireElement<HTMLButtonElement>(`${name}-header`);
-  const body = requireElement<HTMLDivElement>(`${name}-body`);
-  header.setAttribute('aria-expanded', String(expanded));
-  body.hidden = !expanded;
-  const chevron = header.querySelector<HTMLSpanElement>('.chevron');
-  if (chevron) {
-    chevron.textContent = expanded ? '▾' : '▸';
+function setActiveTab(name: PanelTabName): void {
+  for (const tab of PANEL_TABS) {
+    const active = tab === name;
+    requireElement<HTMLButtonElement>(`tab-${tab}`).setAttribute('aria-selected', String(active));
+    requireElement<HTMLDivElement>(`${tab}-body`).hidden = !active;
   }
 }
 
-function isSectionExpanded(name: PanelSectionName): boolean {
-  return requireElement<HTMLButtonElement>(`${name}-header`).getAttribute('aria-expanded') === 'true';
-}
-
-/** 섹션 헤더를 클릭·키보드로 조작할 수 있게 한다. `<button>` 이므로 Enter/Space 는 공짜다. */
-function wireSections(): void {
-  for (const name of PANEL_SECTIONS) {
-    setSectionExpanded(name, false);
-    requireElement<HTMLButtonElement>(`${name}-header`).addEventListener('click', () => {
-      setSectionExpanded(name, !isSectionExpanded(name));
-    });
+/**
+ * 탭을 클릭·키보드로 고를 수 있게 한다. `<button>` 이므로 Enter/Space 는 공짜다.
+ *
+ * 좌우 화살표로 옮기는 ARIA 완전형(roving tabindex)은 넣지 않았다 — 탭이 셋이고 전부 Tab 키로
+ * 닿으므로, 얻는 것보다 들고 갈 상태가 많다.
+ */
+function wireTabs(): void {
+  setActiveTab(PANEL_TABS[0]);
+  for (const tab of PANEL_TABS) {
+    requireElement<HTMLButtonElement>(`tab-${tab}`).addEventListener('click', () =>
+      setActiveTab(tab),
+    );
   }
 }
 
@@ -292,21 +296,13 @@ function wireNavCube(viewer: Viewer): void {
  * 축은 `X / Y / Z` 로만 표기한다 — glTF 로더의 좌표계 변환과 STL 의 Z-up 관행 때문에
  * "가로/높이/깊이"로 부르면 절반은 틀린다 (ADR 260822-115455c).
  */
-function wireUnits(
-  sizes: readonly [number, number, number],
-  measure: MeasurementTool,
-): () => void {
+function wireUnits(measure: MeasurementTool): () => void {
   const select = requireElement<HTMLSelectElement>('unit');
-  const cells = (['x', 'y', 'z'] as const).map((axis) =>
-    requireElement<HTMLSpanElement>(`dim-${axis}`),
-  );
 
+  // 치수 표시는 없앴지만(ADR 260905-222900) **측정 라벨은 단위를 따라야 한다** — 단위나
+  // 자릿수가 바뀌면 이미 찍어 둔 측정이 함께 갱신되어야 하고, 그것이 이 함수가 남은 이유다.
   const render = (setting: UnitSetting): void => {
     const unit = resolveUnit(config.pluginExtension, setting);
-    cells.forEach((cell, axis) => {
-      cell.textContent = formatLength(sizes[axis], unit, config.decimals);
-    });
-    // 이미 만든 측정의 라벨도 함께 갱신한다.
     measure.setUnit(unit, config.decimals);
     root.dataset.unit = unit;
   };
@@ -544,7 +540,7 @@ function wireBackgroundPanel(): void {
  * 섹션 자체를 숨긴 채로 둔다.
  */
 function wireAnimationPanel(viewer: Viewer): void {
-  const section = requireElement<HTMLElement>('animation-section');
+  const section = requireElement<HTMLElement>('animation-row');
   const toggle = requireElement<HTMLButtonElement>('animation-toggle');
   const select = requireElement<HTMLSelectElement>('animation-select');
   const { animations } = viewer;
@@ -656,10 +652,10 @@ function wireHostMessages(viewer: Viewer, rerenderUnits: () => void): void {
  */
 function applyMeasureMode(viewer: Viewer, active: boolean): void {
   setChecked('toggle-measure', active);
-  // 켤 때는 MEASURE 섹션을 펼친다 — 제목 표시줄 아이콘으로 켠 경우 섹션이 접혀 있으면 찍은
-  // 측정 목록이 보이지 않는다. 끌 때는 접지 않는다: 사용자가 펼쳐둔 것을 빼앗지 않는다.
+  // 켤 때는 Measure 탭을 연다 — 제목 표시줄 아이콘으로 켠 경우 다른 탭이 열려 있으면 찍은
+  // 측정 목록이 보이지 않는다. 끌 때는 되돌리지 않는다: 사용자가 고른 탭을 빼앗지 않는다.
   if (active) {
-    setSectionExpanded('measure', true);
+    setActiveTab('measure');
   }
   // 켤 때의 애니메이션 정지와 재렌더는 `viewer.setMeasureMode` 안에서 일어난다.
   viewer.setMeasureMode(active);
